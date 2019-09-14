@@ -830,7 +830,49 @@ ADD COLUMN on_arv tinyint(1) AFTER tb_prophy_cotrimoxazole;
 
 /* </End TB Treatment columns> */
 
+/* <begin Nutrition table>*/
+CREATE TABLE IF NOT EXISTS patient_nutrition (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	age_at_visit_years INT(11),
+	age_at_visit_months INT(11),
+	weight DOUBLE,
+	height DOUBLE,
+	bmi DOUBLE,
+	bmi_for_age INT,
+	weight_for_height INT,
+	edema TINYINT(1),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end NUtrition table>*/
 
-
+/* <begin ob/gyn>*/
+CREATE TABLE IF NOT EXISTS patient_ob_gyn (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	muac INT(11),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end ob/gyn>*/
 
 

@@ -1170,6 +1170,135 @@ UPDATE patient_tb_diagnosis pat, openmrs.obs ob
 	AND o.value_coded IN (160119, 1461)
 	AND o.voided = 0;
 
+
+/* <begin Nutrition surveillance> */
+	INSERT INTO patient_nutrition
+		(
+		 patient_id,
+		 encounter_type_id,
+		 encounter_id,
+		 location_id,
+		 last_updated_date,
+		 visit_id,
+		 visit_date,
+		 voided
+		)
+		SELECT DISTINCT 
+			enc.patient_id,
+			enct.encounter_type_id,
+			enc.encounter_id,
+			enc.location_id, 
+			NOW(), 
+			enc.visit_id,
+			CAST(enc.encounter_datetime AS DATE),
+			enc.voided
+		FROM openmrs.encounter enc, openmrs.encounter_type enct
+		WHERE enc.encounter_type=enct.encounter_type_id
+		AND enct.uuid IN (
+			'12f4d7c3-e047-4455-a607-47a40fe32460', -- Soins de santé primaire--premiére consultation (Adult intital consultation)
+			'a5600919-4dde-4eb8-a45b-05c204af8284', -- Soins de santé primaire--consultation (Adult followp consultation)
+			'709610ff-5e39-4a47-9c27-a60e740b0944', -- Soins de santé primaire--premiére con. p (Paeditric initial consultation)
+			'fdb5b14f-555f-4282-b4c1-9286addf0aae' -- Soins de santé primaire--con. pédiatrique (Paediatric followup consultation)
+		)
+		ON DUPLICATE KEY UPDATE
+		encounter_id = enc.encounter_id,
+		visit_date=CAST(enc.encounter_datetime AS DATE),
+		last_updated_date = NOW(),
+		voided = enc.voided;		
+		
+		/*Age At Visit in Years*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o, isanteplus.patient p
+		 SET pat.age_at_visit_years=TIMESTAMPDIFF(YEAR,p.birthdate,pat.visit_date)
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND pat.patient_id=p.patient_id
+		 AND o.voided = 0;
+		 
+		/*Age At Visit In Months*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o, isanteplus.patient p
+		 SET pat.age_at_visit_months=TIMESTAMPDIFF(MONTH,p.birthdate,pat.visit_date)
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND pat.patient_id=p.patient_id
+		 AND o.voided = 0;
+		 
+		/*Weight*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o
+		 SET pat.weight=o.value_numeric
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=5089
+		 AND o.voided = 0;
+		 
+		/*Height*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o
+		 SET pat.height=o.value_numeric
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=5090
+		 AND o.voided = 0;
+
+		/*BMI*/
+		UPDATE isanteplus.patient_nutrition pat
+		 SET pat.bmi=ROUND((pat.weight/(pat.height/100*pat.height/100)),1)
+		 WHERE pat.age_at_visit_years>=20 
+		 AND pat.voided = 0;
+		 
+		/*Edema*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o
+		 SET pat.edema=(CASE WHEN o.concept_id=159614 AND o.value_coded=460 THEN 1 ELSE 0 END)
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.voided = 0;
+
+		/*Weight for height*/    
+		UPDATE isanteplus.patient_nutrition pat, openmrs.obs o
+		 SET pat.weight_for_height=(CASE 
+										WHEN o.value_coded=1115 THEN 1 -- Normal
+										WHEN o.value_coded=164131 THEN 2 -- SAM
+										WHEN o.value_code=123815 THEN 2 -- MAM
+									END)
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=163515
+		 AND o.value_coded IN (1115, 164131, 123815)
+		 AND o.voided = 0;
+
+		INSERT INTO patient_ob_gyn
+		(
+		 patient_id,
+		 encounter_type_id,
+		 encounter_id,
+		 location_id,
+		 last_updated_date,
+		 visit_id,
+		 visit_date,
+		 voided
+		)
+		SELECT DISTINCT 
+			enc.patient_id,
+			enct.encounter_type_id,
+			enc.encounter_id,
+			enc.location_id, 
+			NOW(), 
+			enc.visit_id,
+			CAST(enc.encounter_datetime AS DATE),
+			enc.voided
+		FROM openmrs.encounter enc, openmrs.encounter_type enct
+		WHERE enc.encounter_type=enct.encounter_type_id
+		AND enct.uuid IN (
+			'5c312603-25c1-4dbe-be18-1a167eb85f97', -- Saisie Première ob/gyn (intital consultation)
+			'49592bec-dd22-4b6c-a97f-4dd2af6f2171' -- Ob/gyn Suivi ( followup consultation)
+		)
+		ON DUPLICATE KEY UPDATE
+		encounter_id = enc.encounter_id,
+		visit_date=CAST(enc.encounter_datetime AS DATE),
+		last_updated_date = NOW(),
+		voided = enc.voided;
+
+		/*MUAC*/
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.muac=o.value_numeric
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1343
+		 AND o.voided = 0;
+
+/* <end Nutrition surveillance> */
+
 		/*Insertion for patient_id, visit_id,encounter_id,visit_date for table patient_imagerie */
 INSERT INTO patient_imagerie (patient_id,location_id,visit_id,encounter_id,visit_date, voided)
 	SELECT DISTINCT ob.person_id,ob.location_id,vi.visit_id, ob.encounter_id,vi.date_started, vi.voided
