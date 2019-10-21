@@ -1116,7 +1116,7 @@ DELETE FROM discontinuation_reason
 					WHERE ob.encounter_id = enc.encounter_id
 					AND enc.encounter_type = ent.encounter_type_id
                     AND ob.concept_id = 5596
-					AND (ob.value_datetime <> "" AND ob.value_datetime is not null)
+					AND (ob.value_datetime is not null)
 					AND ent.uuid IN("5c312603-25c1-4dbe-be18-1a167eb85f97","49592bec-dd22-4b6c-a97f-4dd2af6f2171")
 					on duplicate key update
 					start_date = start_date,
@@ -1976,6 +1976,175 @@ INSERT into virological_tests
 	WHERE vt.test_id = 162087
 	AND vt.answer_concept_id = 1030
 	AND vt.test_result IN (664,703,1138);
+
+	-- START TRANSACTION;
+	INSERT INTO isanteplus.patient_malaria (patient_id, encounter_type_id, encounter_id, location_id, last_updated_date, visit_id, visit_date, voided)
+	SELECT DISTINCT 
+		enc.patient_id,
+		enct.encounter_type_id,
+		enc.encounter_id,
+		enc.location_id, 
+		NOW(), 
+		enc.visit_id,
+		CAST(enc.encounter_datetime AS DATE),
+		enc.voided
+	FROM openmrs.encounter enc, openmrs.encounter_type enct
+	WHERE enc.encounter_type=enct.encounter_type_id
+	AND enct.uuid IN (
+		'12f4d7c3-e047-4455-a607-47a40fe32460', -- Soins de santé primaire--premiére consultation (Adult intital consultation)
+		'a5600919-4dde-4eb8-a45b-05c204af8284', -- Soins de santé primaire--consultation (Adult followp consultation)
+		'709610ff-5e39-4a47-9c27-a60e740b0944', -- Soins de santé primaire--premiére con. p (Paeditric initial consultation)
+		'fdb5b14f-555f-4282-b4c1-9286addf0aae', -- Soins de santé primaire--con. pédiatrique (Paediatric followup consultation)
+		'49592bec-dd22-4b6c-a97f-4dd2af6f2171', -- Ob/gyn Suivi
+		'5c312603-25c1-4dbe-be18-1a167eb85f97', -- Saisie Première ob/gyn
+		'17536ba6-dd7c-4f58-8014-08c7cb798ac7', -- Saisie Première
+		'204ad066-c5c2-4229-9a62-644bc5617ca2', -- Suivi Visite
+		'349ae0b4-65c1-4122-aa06-480f186c8350', -- Saisie Première pédiatrique
+		'f037e97b-471e-4898-a07c-b8e169e0ddc4' -- Analyses de Lab.
+	)
+	ON DUPLICATE KEY UPDATE
+	encounter_id = enc.encounter_id,
+	visit_date=CAST(enc.encounter_datetime AS DATE),
+	last_updated_date = NOW(),
+	voided = enc.voided;
+		
+	/*Fever < 2 weeks*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.fever_for_less_than_2wks=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=159614
+	 AND o.value_coded=163740
+	 AND o.voided = 0;
+	 
+	/*Suspected Malaria*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.suspected_malaria=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=6042 OR o.concept_id=6097
+	 AND o.value_coded=116128
+	 AND o.voided = 0;
+	 
+	/*Confirmed Malaria*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.confirmed_malaria=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND (o.concept_id=6042 OR o.concept_id=6097)
+	 AND o.value_coded=160148
+	 AND o.voided = 0;
+	 
+	/*Treated with chloroquine*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.treated_with_chloroquine=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1282
+	 AND o.value_coded=73300
+	 AND o.voided = 0;
+	 
+	/*Treated with primaquine*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.treated_with_primaquine=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1282
+	 AND o.value_coded=82521
+	 AND o.voided = 0;
+	 
+	/*Treated with quinine*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.treated_with_quinine=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1282
+	 AND o.value_coded=83023
+	 AND o.voided = 0;
+	 
+	/*Microscopic Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.microscopic_test=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1271
+	 AND o.value_coded=1366
+	 AND o.voided = 0;
+	 
+	/*Positive Microscopic Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.positive_microscopic_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1366
+	 AND o.value_coded IN (1365, 1364, 1362, 1363)
+	 AND o.voided = 0;
+	 
+	/*Negative Microscopic Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.negative_microscopic_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1366
+	 AND o.value_coded=664
+	 AND o.voided = 0;
+	 
+	/*Positive plasmodium falciparum*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.positive_plasmodium_falciparum_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1643
+	 AND o.value_coded=161246
+	 AND o.voided = 0;
+	 
+	/*Mixed Positive Microscopic Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.mixed_positive_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1643
+	 AND o.value_coded=161248
+	 AND o.voided = 0;
+	 
+	/*Positive plasmodium vivax*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.positive_plasmodium_vivax_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1643
+	 AND o.value_coded=161247
+	 AND o.voided = 0;
+	 
+	/*Rapid Malaria Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.rapid_test=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1271
+	 AND o.value_coded=1643
+	 AND o.voided = 0;
+	 
+	/*Positive Rapid Malaria Test*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.positve_rapid_test_result=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1643
+	 AND o.value_coded=703
+	 AND o.voided = 0;
+	 
+	/*Severe Malaria*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.severe_malaria=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=6042
+	 AND o.value_coded=160155
+	 AND o.voided = 0;
+	 
+	/*Hospitalized*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.hospitallized=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=1272
+	 AND o.value_coded=5485
+	 AND o.voided = 0;
+	 
+	/*Confirmed Malaria with pregnancy*/    
+	UPDATE isanteplus.patient_malaria pat, openmrs.obs o
+	 SET pat.confirmed_malaria_preganancy=1
+	 WHERE pat.encounter_id=o.encounter_id
+	 AND o.concept_id=160168
+	 AND o.value_coded=160152
+	 AND o.voided = 0;
+	
+	-- COMMIT
 	
 	END$$
 DELIMITER ;
