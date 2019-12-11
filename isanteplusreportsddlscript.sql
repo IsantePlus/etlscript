@@ -1,5 +1,6 @@
 DROP DATABASE if exists isanteplus; 
 create database if not exists isanteplus;
+ALTER DATABASE isanteplus CHARACTER SET utf8 COLLATE utf8_general_ci;
 SET GLOBAL event_scheduler = 1 ;
 SET innodb_lock_wait_timeout = 250;
 use isanteplus;
@@ -817,6 +818,129 @@ ADD COLUMN number_day_dispense INT(11) AFTER number_day;
 ALTER TABLE isanteplus.patient_prescription
 ADD COLUMN pills_amount_dispense INT(11) AFTER number_day_dispense;
 
+/* <Begin TB Treatment columns>*/
 
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN encounter_type_id int(11) AFTER visit_date;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN dyspnea  tinyint(1) AFTER cough_for_2wks_or_more;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_diag_sputum tinyint(1) AFTER dyspnea; 
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_diag_xray tinyint(1) AFTER tb_diag_sputum;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_0 int(11) AFTER tb_diag_xray;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_2 int(11) AFTER tb_test_result_mon_0;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_3 int(11) AFTER tb_test_result_mon_2;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_5 int(11) AFTER tb_test_result_mon_3;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_end int(11) AFTER tb_test_result_mon_5;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN age_at_visit_years int(11) AFTER tb_test_result_end;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN age_at_visit_months int(11) AFTER age_at_visit_years;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_class_pulmonary tinyint(1) AFTER tb_new_diag;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_class_extrapulmonary tinyint(1) AFTER tb_class_pulmonary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_meningitis tinyint(1) AFTER tb_class_extrapulmonary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_genital tinyint(1) AFTER tb_extra_meningitis;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_pleural tinyint(1) AFTER tb_extra_genital;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_miliary tinyint(1) AFTER tb_extra_pleural;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_gangliponic tinyint(1) AFTER tb_extra_miliary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_intestinal tinyint(1) AFTER tb_extra_gangliponic;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_other tinyint(1) AFTER tb_extra_intestinal;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_started_treatment tinyint(1) AFTER tb_treatment_start_date;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_medication_provided tinyint(1) AFTER tb_started_treatment;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_hiv_test_result tinyint(1) AFTER status_tb_treatment;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_prophy_cotrimoxazole tinyint(1) AFTER tb_hiv_test_result;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN on_arv tinyint(1) AFTER tb_prophy_cotrimoxazole;
+
+
+/* </End TB Treatment columns> */
+
+/* <begin Nutrition table>*/
+CREATE TABLE IF NOT EXISTS patient_nutrition (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	age_at_visit_years INT(11),
+	age_at_visit_months INT(11),
+	weight DOUBLE,
+	height DOUBLE,
+	bmi DOUBLE,
+	bmi_for_age INT,
+	weight_for_height INT,
+	edema TINYINT(1),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end NUtrition table>*/
+
+/* <begin ob/gyn>*/
+CREATE TABLE IF NOT EXISTS patient_ob_gyn (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	muac INT(11),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end ob/gyn>*/
 
 
