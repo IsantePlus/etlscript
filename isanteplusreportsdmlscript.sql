@@ -691,7 +691,7 @@ DELIMITER $$
 	AND vi.voided = 0;
 	/*update test_done,date_test_done,comment_test_done for patient_laboratory*/
 	UPDATE patient_laboratory plab,openmrs.obs ob
-	SET plab.test_done=1,plab.test_result=CASE WHEN ob.value_coded<>''
+	SET plab.test_done=1,plab.test_result=CASE WHEN ob.value_coded IS NULL
 	   THEN ob.value_coded
 	   WHEN ob.value_numeric<>'' THEN ob.value_numeric
 	   WHEN ob.value_text<>'' THEN ob.value_text
@@ -1251,13 +1251,15 @@ UPDATE patient_tb_diagnosis pat, openmrs.obs ob
 		 SET pat.weight_for_height=(CASE 
 										WHEN o.value_coded=1115 THEN 1 -- Normal
 										WHEN o.value_coded=164131 THEN 2 -- SAM
-										WHEN o.value_code=123815 THEN 2 -- MAM
+										WHEN o.value_coded=123815 THEN 2 -- MAM
 									END)
 		 WHERE pat.encounter_id=o.encounter_id
 		 AND o.concept_id=163515
 		 AND o.value_coded IN (1115, 164131, 123815)
 		 AND o.voided = 0;
+/* <end Nutrition surveillance> */
 
+/* <begin patient OB/GYN> */
 		INSERT INTO patient_ob_gyn
 		(
 		 patient_id,
@@ -1297,7 +1299,109 @@ UPDATE patient_tb_diagnosis pat, openmrs.obs ob
 		 AND o.concept_id=1343
 		 AND o.voided = 0;
 
-/* <end Nutrition surveillance> */
+		/*Pregnant*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.pregnant=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=160288
+		 AND o.value_coded=1622
+		 AND o.voided = 0;
+		 
+		/*Next Visit Date*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.next_visit_date=o.value_datetime
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=5096
+		 AND o.voided = 0;
+		 
+		/*Edd*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.edd=o.value_datetime
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=5596
+		 AND o.voided = 0;
+		 
+		/*Birth Plan*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.birth_plan=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id IN (163764, 161007, 160112, 163765, 163766) 
+		 AND o.value_coded=1065
+		 AND o.voided = 0;
+		 
+		/*High Risk*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.high_risk=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=160079
+		 AND o.value_coded IN (1107, 145777, 148834, 119476, 460, 1053, 163119, 163120)
+		 AND o.voided = 0;
+		 
+		/*Gestation Greater Than 12Wks*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.gestation_greater_than_12_wks=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1438
+		 AND o.value_numeric>=12
+		 AND o.voided = 0;
+		 
+		/*Iron Supplement*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.iron_supplement=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1282
+		 AND o.value_coded=5843
+		 AND o.voided = 0;
+		 
+		/*Folic Acid Supplement*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.folic_acid_supplement=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1282
+		 AND o.value_coded=76613
+		 AND o.voided = 0;
+		 
+		/*Tetanus Toxoid Vaccine*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.tetanus_toxoid_vaccine=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=984
+		 AND o.value_coded=84879
+		 AND o.voided = 0;
+		 
+		/*Iron Defiency Anemia*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.iron_defiency_anemia=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=160079
+		 AND o.value_coded=148834
+		 AND o.voided = 0;
+		 
+		/*Prescribed Iron*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.prescribed_iron=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1282
+		 AND o.value_coded=78218
+		 AND o.voided = 0;
+		 
+		/*Prescribed Folic Acid*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.prescribed_folic_acid=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND o.concept_id=1282
+		 AND o.value_coded=76613
+		 AND o.voided = 0;
+		 
+		/*Elevated Blood Pressure*/    
+		UPDATE isanteplus.patient_ob_gyn pat, openmrs.obs o
+		 SET pat.elevated_blood_pressure=1
+		 WHERE pat.encounter_id=o.encounter_id
+		 AND (o.concept_id=5085 AND o.value_numeric>=120 AND o.value_numeric<=129) -- bp systolic
+		 AND (o.concept_id=5086 AND o.value_numeric<80)	-- bp diastolic
+		 AND o.voided = 0;
+
+/* <end Nutrition OB/GYN> */
 
 		/*Insertion for patient_id, visit_id,encounter_id,visit_date for table patient_imagerie */
 INSERT INTO patient_imagerie (patient_id,location_id,visit_id,encounter_id,visit_date, voided)
