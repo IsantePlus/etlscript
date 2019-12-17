@@ -358,7 +358,7 @@ DROP TABLE IF EXISTS visit_type;
 	encounter_id int(11),
 	location_id int(11),
 	visit_id int(11),
-	obs_group int(11),
+	obs_group int(11) DEFAULT 0,
 	concept_id int(11),
 	v_type int(11),
 	encounter_date date,
@@ -661,6 +661,74 @@ CREATE TABLE IF NOT EXISTS `openmrs.isanteplus_patient_arv` (
   CONSTRAINT `isanteplus_patient_id_fk` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
+/* <begin malaria surveillance> */
+DROP TABLE IF EXISTS isanteplus.patient_malaria;
+CREATE TABLE IF NOT EXISTS `isanteplus`.`patient_malaria` (
+  `patient_id` INT(11) NOT NULL,
+  `location_id` INT(11) NOT NULL,
+  `visit_id` INT(11) NOT NULL,
+  `visit_date` DATE NOT NULL,
+  `encounter_id` INT(11) NOT NULL,
+  `encounter_type_id` INT(11) NOT NULL,
+  `last_updated_date` DATE NOT NULL, 
+  `voided` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`patient_id`),
+  CONSTRAINT `isanteplus_patient_malaria_patient_id_fk` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`)
+) ENGINE=INNODB DEFAULT CHARSET=utf8;
+	
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN fever_for_less_than_2wks TINYINT(1) AFTER encounter_type_id;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN suspected_malaria TINYINT(1) AFTER fever_for_less_than_2wks;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN confirmed_malaria TINYINT(1) AFTER suspected_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_chloroquine TINYINT(1) AFTER suspected_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_primaquine TINYINT(1) AFTER treated_with_chloroquine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_quinine TINYINT(1) AFTER treated_with_primaquine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN microscopic_test TINYINT(1) AFTER treated_with_quinine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_microscopic_test_result TINYINT(1) AFTER microscopic_test;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN negative_microscopic_test_result TINYINT(1) AFTER positive_microscopic_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_plasmodium_falciparum_test_result TINYINT(1) AFTER negative_microscopic_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN mixed_positive_test_result TINYINT(1) AFTER positive_plasmodium_falciparum_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_plasmodium_vivax_test_result TINYINT(1) AFTER mixed_positive_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN rapid_test TINYINT(1) AFTER positive_plasmodium_vivax_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positve_rapid_test_result TINYINT(1) AFTER rapid_test;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN severe_malaria TINYINT(1) AFTER positve_rapid_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN hospitallized TINYINT(1) AFTER severe_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN confirmed_malaria_preganancy TINYINT(1) AFTER hospitallized;
+
+/* </end malaria surveillance> */
 	
 GRANT SELECT ON isanteplus.* TO 'openmrs_user'@'localhost';
 
