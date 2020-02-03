@@ -129,6 +129,17 @@ DELIMITER $$
 			SET p.occupation = po.value_coded
 			WHERE p.patient_id = po.person_id;
 			
+			/*Update for Contact Name*/
+			
+			update patient p, openmrs.obs o, openmrs.obs ob
+			SET p.contact_name = o.value_text
+			WHERE p.patient_id = o.person_id
+            AND o.person_id = ob.person_id
+            AND o.obs_group_id = ob.obs_id
+            AND o.concept_id = 163258
+            AND ob.concept_id = 165210
+            AND (o.value_text is not null AND o.value_text <> '');
+			
 			/* update patient with vih status */
 			
 			UPDATE patient p, openmrs.encounter en, openmrs.encounter_type ent
@@ -405,7 +416,7 @@ DELIMITER $$
 					 voided
 					)
 					select distinct ob.person_id,
-					ob.encounter_id,ob.location_id,ob.value_coded,ob2.obs_datetime, 1065, now(), ob.voided
+					ob.encounter_id,ob.location_id,ob.value_coded,DATE(ob2.obs_datetime), 1065, now(), ob.voided
 					from openmrs.obs ob, openmrs.obs ob1,openmrs.obs ob2
 					where ob.person_id=ob1.person_id
 					AND ob.encounter_id=ob1.encounter_id
@@ -1405,10 +1416,11 @@ DELETE FROM discontinuation_reason
 		select distinct ob.person_id, 5, ob.encounter_id, DATE(ob.obs_datetime), now()
 		from openmrs.encounter e, openmrs.obs ob, (select o.person_id, max(DATE(o.obs_datetime)) as obs_date
 					FROM openmrs.obs o
-					WHERE o.concept_id = 856 AND o.value_numeric > 1000 group by 1) B
+					WHERE o.concept_id = 856 group by 1) B
 					WHERE e.patient_id = ob.person_id
 					AND ob.person_id = B.person_id
 					AND DATE(ob.obs_datetime) = B.obs_date
+					AND ob.value_numeric > 1000
 					AND (TIMESTAMPDIFF(MONTH, DATE(ob.obs_datetime),DATE(now())) > 3) AND ob.voided = 0
 					ON DUPLICATE KEY UPDATE
 					last_updated_date = now();
@@ -2093,6 +2105,24 @@ INSERT into virological_tests
 	END$$
 DELIMITER ;
 
+DELIMITER $$
+	DROP PROCEDURE IF EXISTS isantepatientstatus$$
+	CREATE PROCEDURE isantepatientstatus()
+		BEGIN
+		/*Adding patient_status_arv iSante to iSantePlus*/
+		INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
+		date_started_status)
+		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
+		AS start_date, pst.insertDate, pst.insertDate
+		FROM isanteplus.patient p, itech.patientStatusTemp pst
+		WHERE p.isante_id = pst.patientID
+		AND DATE(pst.insertDate) >= '2018-01-01'
+		group by p.patient_id, pst.insertDate
+		on duplicate key update
+		last_updated_date = values(last_updated_date);
+	END$$
+	DELIMITER ;
+
 	DELIMITER $$
 		DROP PROCEDURE IF EXISTS calling_all_procedures$$
 		CREATE PROCEDURE calling_all_procedures()
@@ -2104,6 +2134,7 @@ DELIMITER ;
 			call patient_laboratory_dml();
 			call isanteplusreports_dml();
 			call isanteplusreports_health_qual_dml();
+			call isantepatientstatus();
 		END$$
 	DELIMITER ;
 
@@ -2116,20 +2147,25 @@ DELIMITER ;
 	DO
 	call calling_all_procedures();
 	
-	
-	
+	/*
 	
 	INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
-	date_started_status)
-	SELECT p.patient_id, pst.patientStatus as id_status, 
-	MAX(DATE_FORMAT(concat(e.visitdateYy,"-",e.visitDateMm,"-",e.visitDateDd),"%Y-%m-%d"))
-	AS start_date, pst.insertDate, pst.insertDate
-	FROM isanteplus.patient p, itech.patientStatusTemp pst, itech.encounter e
-	WHERE p.isante_id = pst.patientID
-	AND pst.patientID = e.patientID
-	AND DATE(pst.endDate) >= '2018-01-01'
-	AND DATE_FORMAT(concat(e.visitdateYy,"-",e.visitDateMm,"-",e.visitDateDd),"%Y-%m-%d") <= 
-	DATE_FORMAT(pst.endDate,"%Y-%m-%d")
-	GROUP BY 1,2
-	on duplicate key update
-	last_updated_date = now();
+     date_started_status)
+     SELECT p.patient_id, pst.patientStatus as id_status,
+     MAX(DATE_FORMAT(concat(e.visitdateYy,"-",e.visitDateMm,"-",e.visitDateDd),"%Y-%m-%d"))
+     AS start_date, pst.insertDate, pst.insertDate
+     FROM isanteplus.patient p, itech.patientStatusTemp pst, itech.encounter e
+     WHERE p.isante_id = pst.patientID
+     AND pst.patientID = e.patientID
+     AND DATE(pst.endDate) >= '2018-01-01'
+     AND DATE_FORMAT(concat(e.visitdateYy,"-",e.visitDateMm,"-",e.visitDateDd),"%Y-%m-%d") <=
+     DATE_FORMAT(pst.endDate,"%Y-%m-%d")
+     GROUP BY 1,2,4
+	 on duplicate key update
+     last_updated_date = values(last_updated_date);
+	*/
+	
+	
+	
+	
+	

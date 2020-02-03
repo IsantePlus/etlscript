@@ -771,6 +771,9 @@ ADD COLUMN pills_amount_dispense INT(11) AFTER number_day_dispense;
 ALTER TABLE isanteplus.patient
 ADD COLUMN isante_id varchar(50) AFTER national_id;
 
+ALTER TABLE isanteplus.patient
+ADD COLUMN contact_name varchar(50) AFTER mother_name;
+
 DROP TABLE IF EXISTS openmrs.isanteplus_alert;
 		create table if not exists openmrs.isanteplus_alert(
 		patient_id int(11),

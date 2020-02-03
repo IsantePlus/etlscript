@@ -136,72 +136,6 @@ DELIMITER $$
 	*/
 	/*Starting patient_status_arv*/
 	
-	/*Décédés=1*/
-	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
-	SELECT v.patient_id, 1 as id_status, DATE(v.date_started) AS start_date, enc.encounter_id as encounter_id, now(), now()
-	FROM openmrs.visit v,openmrs.encounter enc,openmrs.encounter_type entype,openmrs.obs ob,
-	(SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
-						FROM openmrs.visit pvi where pvi.voided = 0 GROUP BY 1) B,
-						isanteplus.patient_on_arv parv
-	WHERE v.visit_id = enc.visit_id
-	AND enc.encounter_type = entype.encounter_type_id
-	AND enc.encounter_id = ob.encounter_id
-	AND v.patient_id = B.patient_id
-	AND DATE(v.date_started) = B.visit_date
-	AND enc.patient_id = parv.patient_id
-	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-	AND ob.concept_id = 161555
-	AND ob.value_coded = 159
-	AND ob.voided = 0
-	GROUP BY v.patient_id
-	on duplicate key update 
-	last_updated_date = now();
-	
-	/*Transférés=2*/
-	
-	INSERT INTO patient_status_arv(patient_id,id_status,start_date, encounter_id, last_updated_date, date_started_status)
-	SELECT v.patient_id, 2 as id_status, DATE(v.date_started) AS start_date, enc.encounter_id as encounter_id, now(), now()
-	FROM openmrs.visit v,openmrs.encounter enc,openmrs.encounter_type entype,openmrs.obs ob,
-	(SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
-						FROM openmrs.visit pvi where pvi.voided = 0 GROUP BY 1) B,isanteplus.patient_on_arv parv
-	WHERE v.visit_id = enc.visit_id
-	AND enc.encounter_type = entype.encounter_type_id
-	AND enc.encounter_id = ob.encounter_id
-	AND v.patient_id = B.patient_id
-	AND DATE(v.date_started) = B.visit_date
-	AND enc.patient_id = parv.patient_id
-	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-	AND ob.concept_id = 161555
-	AND ob.value_coded = 159492
-	AND ob.voided = 0
-	GROUP BY v.patient_id
-	on duplicate key update 
-	last_updated_date = now();
-	
-	/*Arrêtés=3*/
-	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
-	SELECT v.patient_id,3 as id_status, DATE(v.date_started) AS start_date, enc.encounter_id as encounter_id, now(), now()
-	FROM openmrs.visit v,openmrs.encounter enc,
-	openmrs.encounter_type entype,openmrs.obs ob, openmrs.obs ob2,
-	(SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as date_visit 
-						FROM openmrs.visit pvi where pvi.voided = 0 GROUP BY 1) B,isanteplus.patient_on_arv parv
-	WHERE v.visit_id=enc.visit_id
-	AND enc.encounter_type=entype.encounter_type_id
-	AND enc.encounter_id=ob.encounter_id
-	AND v.patient_id = B.patient_id
-	AND v.date_started = B.date_visit
-	AND enc.patient_id = parv.patient_id
-	AND ob.encounter_id = ob2.encounter_id
-	AND entype.uuid='9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-	AND ob.concept_id=161555
-	AND ob.value_coded = 1667
-	AND ob.voided = 0
-	AND ob2.concept_id = 1667
-	AND ob2.value_coded IN (115198,159737)
-	GROUP BY v.patient_id
-	on duplicate key update 
-	last_updated_date = now();
-	
 /*====================================================*/
 /*Insertion for patient_status Décédés en Pré-ARV=4,
 Transférés en Pré-ARV=5*/
@@ -229,7 +163,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND ob.voided = 0
 	GROUP BY v.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
 	/*Insertion for patient_status réguliers=6*/
 	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
 	SELECT pdis.patient_id,6 as id_status,MAX(DATE(pdis.visit_date)) as start_date,pdis.encounter_id as encounter_id,
@@ -255,7 +189,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND((DATE(now()) <= pdis.next_dispensation_date))
 	GROUP BY pdis.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
 	
 	/*create index patient_status_arv_index_a on patient_status_arv_temp_a (patient_id, id_status, start_date);*/
 	/*Adding status into patient_status_arv table */
@@ -297,7 +231,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND((DATE(now()) > pdis.next_dispensation_date))
 	GROUP BY pdis.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
 
 	/*Insertion for status on the table patient_arv_status Rendez-vous ratés=8*/
 	/*Adding status into patient_status_arv table */
@@ -335,7 +269,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 							)
 	GROUP BY pdis.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
 	
 	/*Insertion for status on the table patient_arv_status Perdus de vue=9*/
 	/*Adding status into patient_status_arv table */
@@ -379,7 +313,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND (TIMESTAMPDIFF(MONTH, v.date_started,DATE(now())) > 12)
 	GROUP BY v.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
 	/*=========================================================*/
 	/*INSERTION for patient status Recent on PRE-ART=7,Actifs en Pré-ARV=11 */
 INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last_updated_date,date_started_status)
@@ -423,7 +357,71 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND (TIMESTAMPDIFF(MONTH,v.date_started,DATE(now()))<=12)
 	GROUP BY v.patient_id
 	on duplicate key update 
-	last_updated_date = now();
+	last_updated_date = values(last_updated_date);
+	
+	/*Décédés=1*/
+	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,
+	last_updated_date, date_started_status)
+	SELECT enc.patient_id, 1 as id_status, MAX(DATE(enc.encounter_datetime)) AS start_date,
+	enc.encounter_id as encounter_id, now(), now()
+	FROM openmrs.encounter enc,openmrs.encounter_type entype,openmrs.obs ob,
+	isanteplus.patient_on_arv parv
+	WHERE enc.encounter_type = entype.encounter_type_id
+	AND enc.patient_id = ob.person_id
+	AND enc.encounter_id = ob.encounter_id
+	AND enc.patient_id = parv.patient_id
+	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+	AND ob.concept_id = 161555
+	AND ob.value_coded = 159
+	AND ob.voided = 0
+	AND enc.voided = 0
+	GROUP BY enc.patient_id
+	on duplicate key update 
+	last_updated_date = values(last_updated_date);
+	
+	/*Transférés=2*/
+	
+	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,
+	last_updated_date, date_started_status)
+	SELECT enc.patient_id, 2 as id_status, MAX(DATE(enc.encounter_datetime)) AS start_date,
+	enc.encounter_id as encounter_id, now(), now()
+	FROM openmrs.encounter enc,openmrs.encounter_type entype,openmrs.obs ob,
+	isanteplus.patient_on_arv parv
+	WHERE enc.encounter_type = entype.encounter_type_id
+	AND enc.patient_id = ob.person_id
+	AND enc.encounter_id = ob.encounter_id
+	AND enc.patient_id = parv.patient_id
+	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+	AND ob.concept_id = 161555
+	AND ob.value_coded = 159492
+	AND ob.voided = 0
+	AND enc.voided = 0
+	GROUP BY enc.patient_id
+	on duplicate key update 
+	last_updated_date = values(last_updated_date);
+	
+	/*Arrêtés=3*/
+	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,
+	last_updated_date, date_started_status)
+	SELECT enc.patient_id,3 as id_status, MAX(DATE(enc.encounter_datetime)) AS start_date, 
+	enc.encounter_id as encounter_id, now(), now()
+	FROM openmrs.encounter enc,
+	openmrs.encounter_type entype,openmrs.obs ob, openmrs.obs ob2,isanteplus.patient_on_arv parv
+	WHERE enc.encounter_type = entype.encounter_type_id
+	AND enc.patient_id = ob.person_id
+	AND enc.encounter_id = ob.encounter_id
+	AND enc.patient_id = parv.patient_id
+	AND ob.encounter_id = ob2.encounter_id
+	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+	AND ob.concept_id = 161555
+	AND ob.value_coded = 1667
+	AND ob.voided = 0
+	AND enc.voided = 0
+	AND ob2.concept_id = 1667
+	AND ob2.value_coded IN (115198,159737)
+	GROUP BY enc.patient_id
+	on duplicate key update 
+	last_updated_date = values(last_updated_date);
 		
 	/*DROP TABLE patient_status_arv_temp_a;*/
 	
@@ -482,7 +480,8 @@ DELIMITER $$
 			join (select distinct drugID1 from regimen) r
 			on r.drugID1 = d1.drug_id
 			where p.vih_status = 1
-			AND d1.arv_drug = 1065;
+			AND d1.arv_drug = 1065
+			AND d1.voided <> 1;
 
 			insert into pepfarTableTemp (location_id, patient_id, visit_date, regimen, rx_or_prophy)
 			select distinct location_id, patient_id, visit_date, shortname, rx_or_prophy
@@ -508,7 +507,8 @@ DELIMITER $$
 			join patient_prescription d2 using (location_id, patient_id, visit_date)
 			join (select distinct drugID1, drugID2 from regimen) r
 			on r.drugID1 = d1.drugID1
-			and r.drugID2 = d2.drug_id;
+			and r.drugID2 = d2.drug_id
+			WHERE d2.voided <> 1;
 
 			insert into pepfarTableTemp (location_id, patient_id, visit_date, regimen, rx_or_prophy)
 			select distinct location_id, patient_id, visit_date, shortname, prefix.rx_or_prophy
@@ -528,7 +528,8 @@ DELIMITER $$
 			on prefix.drugID1 = r.drugID1
 			and prefix.drugID2 = r.drugID2
 			and patient_prescription.drug_id = r.drugID3
-			where r.drugID3 != 0;
+			where r.drugID3 != 0
+			AND patient_prescription.voided <> 1;
 
 			insert into pepfarTable (location_id, patient_id, visit_date, regimen, rx_or_prophy, last_updated_date)
 			select p.location_id, p.patient_id, p.visit_date, p.regimen, p.rx_or_prophy, now() from pepfarTableTemp p
@@ -578,30 +579,29 @@ DELIMITER $$
 	BEGIN
 		
 		/*INSERT FLAGS*/
-				use openmrs;
+				/*use openmrs;*/
 				SET SQL_SAFE_UPDATES = 0;
 				SET FOREIGN_KEY_CHECKS = 0;
-				truncate table patientflags_flag_tag;
-				truncate table patientflags_tag_displaypoint;
-				truncate table patientflags_tag_role;
-				truncate table patientflags_flag;
-				truncate table patientflags_tag;
-				truncate table patientflags_priority;
+				truncate table openmrs.patientflags_flag_tag;
+				truncate table openmrs.patientflags_tag_displaypoint;
+				truncate table openmrs.patientflags_flag;
+				truncate table openmrs.patientflags_tag;
+				truncate table openmrs.patientflags_priority;
 				
 				SET SQL_SAFE_UPDATES = 1;
 				SET FOREIGN_KEY_CHECKS = 1;
 
-				INSERT INTO `patientflags_tag` VALUES (2,'Tag',NULL,1,'2018-05-28 09:44:50',NULL,NULL,0,NULL,NULL,NULL,'4dbe134d-a67a-44be-871f-5890b05d328c');
+				INSERT INTO openmrs.patientflags_tag VALUES (2,'Tag',NULL,1,'2018-05-28 09:44:50',NULL,NULL,0,NULL,NULL,NULL,'4dbe134d-a67a-44be-871f-5890b05d328c');
 			 	
-			 	INSERT INTO `patientflags_priority` VALUES 
+			 	INSERT INTO openmrs.patientflags_priority VALUES 
 				(1,'Liste VL','color:red',1,NULL,1,'2018-05-28 02:17:38',1,'2018-05-28 02:19:27',0,NULL,NULL,NULL,'f2e0e461-170e-4df9-80fc-da2d93663328');
-				INSERT INTO `patientflags_priority` VALUES 
+				INSERT INTO openmrs.patientflags_priority VALUES 
 				(2,'Liste Medicament','color: red',2,NULL,1,'2018-05-31 15:02:47',NULL,NULL,0,NULL,NULL,NULL,'5d87ef2b-5cc2-4ef5-a241-a122977170d6');
-				INSERT INTO `patientflags_priority` VALUES 
+				INSERT INTO openmrs.patientflags_priority VALUES 
 				(3,'Liste TB','color: blue',3,NULL,1,'2018-05-31 15:02:47',NULL,NULL,0,NULL,NULL,NULL,'439d2dfa-29ee-4271-9e18-97a80d0eb475');
 		
 				/* Dernière charge virale de ce patient remonte à au moins 12 mois */
-			 	INSERT INTO `patientflags_flag` VALUES 
+			 	INSERT INTO openmrs.patientflags_flag VALUES 
 				(2,'Dernière charge virale de ce patient remonte à au moins 12 mois',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 4',
 				'La dernière charge virale de ce patient remonte à au moins 12 mois',1,
@@ -611,7 +611,7 @@ DELIMITER $$
 				
 				/*patient sous ARV depuis 6 mois sans un résultat de charge virale*/
 				
-				INSERT INTO `patientflags_flag` VALUES 
+				INSERT INTO openmrs.patientflags_flag VALUES 
 				(3,'patient sous ARV depuis 6 mois sans un résultat de charge virale',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 1',
 				 'Le patient est sous ARV depuis 6 mois sans un résultat de charge virale',1,
@@ -621,7 +621,7 @@ DELIMITER $$
 
 				/* Patient sous ARV et traitement anti tuberculeux */
 				
-				INSERT INTO `patientflags_flag` VALUES 
+				INSERT INTO openmrs.patientflags_flag VALUES 
 				(4,'Patient sous ARV et traitement anti tuberculeux',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 9',
 				'Patient sous ARV et traitement anti TB',1,
@@ -630,7 +630,7 @@ DELIMITER $$
 				 
 				 
 				 /* Dernière charge virale de ce patient remonte à au moins 3 mois et le résultat était supérieur 1000 copies/ml */
-			 	INSERT INTO `patientflags_flag` VALUES 
+			 	INSERT INTO openmrs.patientflags_flag VALUES 
 				(5,'Dernière charge virale de ce patient remonte à au moins 3 mois et le résultat était supérieur 1000 copies/ml',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 5',
 				'La dernière charge virale de ce patient remonte à au moins 3 mois et le résultat était > 1000 copies/ml',1,
@@ -638,7 +638,7 @@ DELIMITER $$
 				NULL,1,'2018-05-28 02:18:18',1,'2018-05-31 13:43:43',0,NULL,NULL,NULL,
 				'8c176fcb-9354-43fa-b13c-c293e6f910dc',1);
 				/*Le patient doit venir renflouer ses ARV dans les 30 prochains jours*/
-				INSERT INTO `patientflags_flag` VALUES 
+				INSERT INTO openmrs.patientflags_flag VALUES 
 				(7,'Le patient doit venir renflouer ses ARV dans les 30 prochains jours',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 7',
 				'Le patient doit venir renflouer ses ARV dans les 30 prochains jours',1,
@@ -646,7 +646,7 @@ DELIMITER $$
 				NULL,1,'2018-05-28 02:18:18',1,'2018-05-31 13:43:43',0,NULL,NULL,NULL,
 				'8c176fcb-9354-43fa-b13c-c293e6f910dc',2);
 				/*Le patient n'a plus de médicaments disponibles*/
-				INSERT INTO `patientflags_flag` VALUES 
+				INSERT INTO openmrs.patientflags_flag VALUES 
 				(8,'Le patient n\'a plus de médicaments disponibles',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 8',
 				'Le patient n\'a plus de médicaments disponibles',1,
@@ -654,8 +654,8 @@ DELIMITER $$
 				NULL,1,'2018-05-28 02:18:18',1,'2018-05-31 13:43:43',0,NULL,NULL,NULL,
 				'8c176fcb-9354-43fa-b13c-c293e6f910dc',2);
 				 
-				 INSERT INTO `patientflags_flag_tag` VALUES (2,2),(3,2),(4,2),(5,2),(7,2),(8,2);
-				 INSERT INTO `patientflags_tag_displaypoint` VALUES (2,1);
+				 INSERT INTO openmrs.patientflags_flag_tag VALUES (2,2),(3,2),(4,2),(5,2),(7,2),(8,2);
+				 INSERT INTO openmrs.patientflags_tag_displaypoint VALUES (2,1);
 		
 		/*Update global_property to Set where the alert should appear*/			
 		UPDATE openmrs.global_property SET property_value = 'false' 
@@ -670,40 +670,44 @@ DELIMITER $$
 	DROP PROCEDURE IF EXISTS role_alert$$
 	CREATE PROCEDURE role_alert()
 	BEGIN
+			SET SQL_SAFE_UPDATES = 0;
+			SET FOREIGN_KEY_CHECKS = 0;
 			
+			truncate table openmrs.patientflags_tag_role;
 		/*Insert patientflags_tag_role*/
-                 INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Anonymous');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Administers System');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Configures Appointment Scheduling');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Configures Forms');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Configures Metadata');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Edits Existing Encounters');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Enters ADT Events');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Enters Vitals');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Has Super User Privileges');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Manages Atlas');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Manages Provider Schedules');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Records Allergies');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Registers Patients');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Requests Appointments');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Schedules And Overbooks Appointments');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Schedules Appointments');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Sees Appointment Schedule');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Uses Capture Vitals App');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Uses Patient Summary');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: View Reports');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: Writes Clinical Notes');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Authenticated');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Organizational: Doctor');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Organizational: Hospital Administrator');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Organizational: Nurse');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Organizational: Registration Clerk');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Organizational: System Administrator');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Privilege Level: Full');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Provider');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'System Developer');
-					INSERT INTO `patientflags_tag_role` (`tag_id`,`role`) VALUES (2,'Application: View Reports');
-
+                 INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Anonymous');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Administers System');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Configures Appointment Scheduling');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Configures Forms');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Configures Metadata');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Edits Existing Encounters');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Enters ADT Events');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Enters Vitals');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Has Super User Privileges');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Manages Atlas');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Manages Provider Schedules');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Records Allergies');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Registers Patients');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Requests Appointments');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Schedules And Overbooks Appointments');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Schedules Appointments');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Sees Appointment Schedule');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Uses Capture Vitals App');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Uses Patient Summary');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: View Reports');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: Writes Clinical Notes');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Authenticated');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Organizational: Doctor');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Organizational: Hospital Administrator');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Organizational: Nurse');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Organizational: Registration Clerk');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Organizational: System Administrator');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Privilege Level: Full');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Provider');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'System Developer');
+					INSERT INTO openmrs.patientflags_tag_role (`tag_id`,`role`) VALUES (2,'Application: View Reports');
+				SET SQL_SAFE_UPDATES = 1;
+	SET FOREIGN_KEY_CHECKS = 1;
 		
 	END$$
 	DELIMITER ;
@@ -721,7 +725,7 @@ DELIMITER $$
 
 DROP EVENT if exists patient_status_arv_event;
 	CREATE EVENT if not exists patient_status_arv_event
-	ON SCHEDULE EVERY 40 MINUTE
+	ON SCHEDULE EVERY 1 HOUR
 	 STARTS now()
 		DO
 		call calling_arv_status_and_regimen();
