@@ -338,17 +338,7 @@ DELIMITER $$
 		   UPDATE patient_dispensing pdis, (SELECT ad.drug_id FROM arv_drugs ad) B
 		   SET pdis.arv_drug = 1065
 		   WHERE pdis.drug_id = B.drug_id;
-	
-	/*INSERTION for patient on ARV*/
-		   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
-		   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
-		   FROM patient_dispensing pdisp 
-		   WHERE pdisp.arv_drug = 1065
-		   GROUP BY pdisp.patient_id
-			on duplicate key update
-			visit_id = visit_id,
-			visit_date = visit_date,
-			last_updated_date = now();
+		   
 	/*update rx_or_prophy for table patient_dispensing*/
 	update isanteplus.patient_dispensing pdisp, openmrs.obs ob1, openmrs.obs ob2, openmrs.obs ob3
 		   set pdisp.rx_or_prophy=ob2.value_coded
@@ -362,6 +352,18 @@ DELIMITER $$
            AND ob3.concept_id=1282
            AND pdisp.drug_id=ob3.value_coded
            AND ob2.voided=0;
+		   
+	/*INSERTION for patient on ARV*/
+		   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
+		   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
+		   FROM patient_dispensing pdisp 
+		   WHERE pdisp.arv_drug = 1065
+		   AND pdisp.rx_or_prophy = 138405
+		   GROUP BY pdisp.patient_id
+			on duplicate key update
+			visit_id = visit_id,
+			visit_date = visit_date,
+			last_updated_date = now();
 		   
 		END$$
 DELIMITER ;
@@ -1293,22 +1295,22 @@ DELETE FROM discontinuation_reason
 					voided = ob.voided;
 	/* Patient_pregnancy updated date_stop for area DPA: <obs conceptId="CIEL:5596"/>*/
 	UPDATE patient_pregnancy ppr,openmrs.obs ob
-	SET end_date=DATE(ob.value_datetime)
-	WHERE ppr.patient_id=ob.person_id
-	AND ob.concept_id=5596
+	SET end_date = DATE(ob.value_datetime)
+	WHERE ppr.patient_id = ob.person_id
+	AND ob.concept_id = 5596
 	AND ob.voided = 0
 	AND ppr.start_date < DATE(ob.value_datetime)
 	AND ppr.end_date is null;
 	/*Patient_pregnancy updated end_date for La date d’une fiche de travail et d’accouchement > a la date de début*/
 	UPDATE patient_pregnancy ppr,openmrs.encounter enc, 
 	openmrs.encounter_type etype
-	SET end_date=DATE(enc.encounter_datetime)
-	WHERE ppr.patient_id=enc.patient_id
+	SET end_date = DATE(enc.encounter_datetime)
+	WHERE ppr.patient_id = enc.patient_id
 	AND ppr.start_date < DATE(enc.encounter_datetime)
 	AND ppr.end_date is null
-	AND enc.encounter_type=etype.encounter_type_id
+	AND enc.encounter_type = etype.encounter_type_id
 	AND enc.voided = 0
-	AND etype.uuid='d95b3540-a39f-4d1e-a301-8ee0e03d5eab';
+	AND etype.uuid = 'd95b3540-a39f-4d1e-a301-8ee0e03d5eab';
 	/*Patient_pregnancy updated for DDR – 3 mois + 7 jours=1427 */
 	UPDATE patient_pregnancy ppr,openmrs.obs ob, openmrs.encounter enc
 	SET end_date=DATE(ob.value_datetime) - INTERVAL 3 MONTH + INTERVAL 7 DAY + INTERVAL 1 YEAR
@@ -1325,173 +1327,6 @@ DELETE FROM discontinuation_reason
 	WHERE (TIMESTAMPDIFF(MONTH,ppr.start_date,DATE(now()))>=9)
 	AND ppr.end_date is null;
 /*Ending insertion for patient_prenancy table*/
-/*Starting insertion for alert (charge viral)*/
-/*Insertion for Nombre de patient sous ARV depuis 6 mois sans un résultat de charge virale*/
-	TRUNCATE TABLE alert;
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)
-	SELECT distinct B.patient_id,1,B.encounter_id, B.visit_date, now()
-	FROM isanteplus.patient p,
-	(select pdis.patient_id, pdis.encounter_id as encounter_id, MIN(DATE(pdis.visit_date)) as visit_date 
-	FROM isanteplus.patient_dispensing pdis WHERE pdis.arv_drug = 1065 GROUP BY 1) B
-	WHERE p.patient_id = B.patient_id
-	AND p.date_started_arv = B.visit_date
-	AND (TIMESTAMPDIFF(MONTH,DATE(p.date_started_arv),DATE(now())) >= 6)
-	AND p.patient_id NOT IN(SELECT pl.patient_id FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id IN(856, 1305) AND pl.test_done=1 AND pl.voided <> 1 AND ((pl.test_result is not null) OR (pl.test_result <> '')))
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr))
-	AND p.vih_status = 1;
-	/*patients sous ARV depuis 5 mois sans un résultat de charge virale*/
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)
-	SELECT distinct B.patient_id,2,B.encounter_id, B.visit_date, now()
-	FROM isanteplus.patient p,
-	(select pdis.patient_id, pdis.encounter_id as encounter_id, MIN(DATE(pdis.visit_date)) as visit_date 
-	FROM isanteplus.patient_dispensing pdis WHERE pdis.arv_drug = 1065 GROUP BY 1) B
-	WHERE p.patient_id = B.patient_id
-	AND p.date_started_arv = B.visit_date
-	AND (TIMESTAMPDIFF(MONTH,DATE(p.date_started_arv),DATE(now())) = 5)
-	AND p.patient_id NOT IN(SELECT pl.patient_id FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id IN(856, 1305) AND pl.test_done=1 AND pl.voided <> 1 AND ((pl.test_result is not null) OR (pl.test_result <> '')))
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba')
-	AND p.vih_status = 1;
-	/*Insertion for Nombre de femmes enceintes, sous ARV depuis 4 mois sans un résultat de charge virale*/		
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)		
-	SELECT distinct B.patient_id,3,B.encounter_id, B.visit_date, now()
-	FROM isanteplus.patient p,
-	(select pdis.patient_id, pdis.encounter_id as encounter_id, MIN(DATE(pdis.visit_date)) as visit_date 
-	FROM isanteplus.patient_dispensing pdis WHERE pdis.arv_drug = 1065 GROUP BY 1) B,
-	isanteplus.patient_pregnancy pp
-	WHERE p.patient_id = B.patient_id
-	AND p.date_started_arv = B.visit_date
-	AND p.patient_id = pp.patient_id
-	AND (TIMESTAMPDIFF(MONTH,DATE(p.date_started_arv),DATE(now())) >= 4)
-	AND p.patient_id NOT IN(SELECT pl.patient_id FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id IN(856, 1305) AND pl.test_done=1 AND pl.voided <> 1 AND ((pl.test_result is not null) OR (pl.test_result <> '')))
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr))
-	AND p.vih_status = 1;
-	/*Insertion for Nombre de patients ayant leur dernière charge virale remontant à au moins 12 mois*/
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)		
-	SELECT distinct plab.patient_id,4,plab.encounter_id, ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)), now()
-	FROM isanteplus.patient p, isanteplus.patient_laboratory plab,
-	(SELECT pl.patient_id, MAX(ifnull(DATE(date_test_done),DATE(pl.visit_date))) as visit_date FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id IN(856, 1305) AND pl.test_done=1 AND pl.voided <> 1 
-			AND ((pl.test_result is not null) OR (pl.test_result <> '')) GROUP BY 1) C,
-			isanteplus.patient_on_arv parv
-	WHERE p.patient_id = plab.patient_id
-	AND plab.patient_id = C.patient_id
-	AND ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)) = C.visit_date
-	AND p.patient_id = parv.patient_id
-	AND (TIMESTAMPDIFF(MONTH,DATE(C.visit_date),DATE(now())) >= 12)
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr))
-	AND p.vih_status = 1;
-	/*Insertion for Nombre de patients ayant leur dernière charge virale remontant à au moins 3 mois et dont le résultat était > 1000 copies/ml*/
-	/*INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)		
-	SELECT distinct plab.patient_id,5,plab.encounter_id, ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)), now()
-	FROM isanteplus.patient p, isanteplus.patient_laboratory plab,
-	(SELECT pl.patient_id, MAX(ifnull(DATE(date_test_done),DATE(pl.visit_date))) as visit_date FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id IN(856, 1305) AND pl.test_done=1 AND pl.voided <> 1 
-			AND ((pl.test_result is not null) OR (pl.test_result <> '')) GROUP BY 1) C,
-			isanteplus.patient_on_arv parv
-	WHERE p.patient_id = plab.patient_id
-	AND plab.patient_id = C.patient_id
-	AND ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)) = C.visit_date
-	AND p.patient_id = parv.patient_id
-	AND (TIMESTAMPDIFF(MONTH,DATE(C.visit_date),DATE(now())) > 3)
-	AND plab.test_result > 1000
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr))
-	AND p.vih_status = 1;*/
-	
-	/* Dernière charge virale de ce patient remonte à au moins
-		3 mois et le résultat était supérieur 1000 copies/ml */
-		
-		INSERT INTO alert (patient_id,id_alert,encounter_id, date_alert,last_updated_date)
-		select distinct ob.person_id, 5, ob.encounter_id, DATE(ob.obs_datetime), now()
-		from openmrs.encounter e, openmrs.obs ob, (select o.person_id, max(DATE(o.obs_datetime)) as obs_date
-					FROM openmrs.obs o
-					WHERE o.concept_id = 856 group by 1) B
-					WHERE e.patient_id = ob.person_id
-					AND ob.person_id = B.person_id
-					AND DATE(ob.obs_datetime) = B.obs_date
-					AND ob.value_numeric > 1000
-					AND (TIMESTAMPDIFF(MONTH, DATE(ob.obs_datetime),DATE(now())) > 3) AND ob.voided = 0
-					ON DUPLICATE KEY UPDATE
-					last_updated_date = now();
-	
-	/*patient avec une dernière charge viral >1000 copies/ml*/
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)		
-	SELECT distinct plab.patient_id,6,plab.encounter_id, ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)), now()
-	FROM isanteplus.patient p, isanteplus.patient_laboratory plab,
-	(SELECT pl.patient_id, MAX(ifnull(DATE(date_test_done),DATE(pl.visit_date))) as visit_date FROM isanteplus.patient_laboratory pl
-			WHERE pl.test_id = 856 AND pl.test_done=1 AND pl.voided <> 1 
-			AND ((pl.test_result is not null) OR (pl.test_result <> '')) GROUP BY 1) C,
-			isanteplus.patient_on_arv parv
-	WHERE p.patient_id = plab.patient_id
-	AND plab.patient_id = C.patient_id
-	AND ifnull(DATE(plab.date_test_done),DATE(plab.visit_date)) = C.visit_date
-	AND p.patient_id = parv.patient_id
-	AND plab.test_id = 856
-	AND plab.test_result > 1000
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr))
-	AND p.vih_status = 1;
-	
-	/*Tout patient dont la prochaine date de dispensation (next_disp) arrive dans les 30 
-	prochains jours par rapport à la date de consultation actuelle*/
-	
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)
-	SELECT distinct pdisp.patient_id,7,pdisp.encounter_id, DATE(pdisp.visit_date), now()
-	FROM isanteplus.patient p, isanteplus.patient_dispensing pdisp,
-	(SELECT pd.patient_id, MAX(pd.next_dispensation_date) as next_dispensation_date 
-	FROM isanteplus.patient_dispensing pd WHERE pd.arv_drug = 1065 AND 
-	(pd.rx_or_prophy <> 163768 OR pd.rx_or_prophy is null) AND pd.voided <> 1 GROUP BY 1) B
-	WHERE p.patient_id = pdisp.patient_id
-	AND pdisp.patient_id = B.patient_id
-	AND pdisp.next_dispensation_date = B.next_dispensation_date
-	AND DATEDIFF(pdisp.next_dispensation_date,now()) between 0 and 30
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-				AND enc.patient_id IN (select dr.patient_id FROM isanteplus.discontinuation_reason dr));
-	
-	/*Tout patient dont la prochaine date de dispensation (next_disp) se situe 
-	dans le passe par rapport à la date de consultation actuelle*/
-	
-	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert,last_updated_date)
-	SELECT distinct pdisp.patient_id,8,pdisp.encounter_id, DATE(pdisp.visit_date), now()
-	FROM isanteplus.patient p, isanteplus.patient_dispensing pdisp,
-	(SELECT pd.patient_id, MAX(pd.next_dispensation_date) as next_dispensation_date 
-	FROM isanteplus.patient_dispensing pd WHERE pd.arv_drug = 1065 AND 
-	(pd.rx_or_prophy <> 163768 OR pd.rx_or_prophy is null) AND pd.voided <> 1 GROUP BY 1) B
-	WHERE p.patient_id = pdisp.patient_id
-	AND pdisp.patient_id = B.patient_id
-	AND pdisp.next_dispensation_date = B.next_dispensation_date
-	AND DATEDIFF(B.next_dispensation_date,now()) < 0
-	AND p.patient_id NOT IN (select enc.patient_id FROM openmrs.encounter enc, openmrs.encounter_type et 
-				where enc.encounter_type = et.encounter_type_id AND et.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba');
-	/* Patient sous ARV et traitement anti tuberculeux */
-		INSERT INTO alert (patient_id,id_alert,encounter_id,date_alert,last_updated_date)
-			select distinct p.patient_id, 9, p.encounter_id, DATE(p.visit_date), now()
-			from isanteplus.patient_dispensing p, isanteplus.patient_dispensing pdisp,
-			(SELECT pdi.patient_id, MAX(pdi.visit_date) as visit_date
-			FROM isanteplus.patient_dispensing pdi GROUP BY 1) B
-			WHERE p.patient_id = pdisp.patient_id
-			AND p.patient_id = B.patient_id
-			AND p.visit_date = B.visit_date
-			AND pdisp.visit_date = B.visit_date
-			AND p.arv_drug = 1065
-			AND (p.rx_or_prophy <> 163768 OR p.rx_or_prophy is null)
-			AND pdisp.drug_id in ('75948','78280','82900','767','84360')
-			ON DUPLICATE KEY UPDATE
-			last_updated_date = now();
-	
 	
 /*Ending insertion for alert*/
 /*Part of patient_diagnosis*/
@@ -2103,24 +1938,6 @@ INSERT into virological_tests
 	AND vt.test_result IN (664,703,1138);
 	
 	END$$
-DELIMITER ;
-
-DELIMITER $$
-	DROP PROCEDURE IF EXISTS isantepatientstatus$$
-	CREATE PROCEDURE isantepatientstatus()
-		BEGIN
-		/*Adding patient_status_arv iSante to iSantePlus*/
-		INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
-		date_started_status)
-		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
-		AS start_date, pst.insertDate, pst.insertDate
-		FROM isanteplus.patient p, itech.patientStatusTemp pst
-		WHERE p.isante_id = pst.patientID
-		AND DATE(pst.insertDate) >= '2018-01-01'
-		group by p.patient_id, pst.insertDate
-		on duplicate key update
-		last_updated_date = values(last_updated_date);
-	END$$
 	DELIMITER ;
 
 	DELIMITER $$
@@ -2134,7 +1951,6 @@ DELIMITER $$
 			call patient_laboratory_dml();
 			call isanteplusreports_dml();
 			call isanteplusreports_health_qual_dml();
-			call isantepatientstatus();
 		END$$
 	DELIMITER ;
 
@@ -2147,8 +1963,28 @@ DELIMITER $$
 	DO
 	call calling_all_procedures();
 	
-	/*
 	
+	DELIMITER $$
+	DROP PROCEDURE IF EXISTS isantepatientstatus$$
+	CREATE PROCEDURE isantepatientstatus()
+		BEGIN
+		/*Adding patient_status_arv iSante to iSantePlus*/
+		INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
+		date_started_status)
+		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
+		AS start_date, pst.insertDate, pst.insertDate
+		FROM isanteplus.patient p, itech.patientStatusTemp pst
+		WHERE p.isante_id = pst.patientID
+		AND DATE(pst.insertDate) >= '2018-09-01'
+		group by p.patient_id, pst.insertDate
+		on duplicate key update
+		last_updated_date = values(last_updated_date);
+	END$$
+	DELIMITER ;
+	
+	call isantepatientstatus();
+	
+	/*
 	INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
      date_started_status)
      SELECT p.patient_id, pst.patientStatus as id_status,

@@ -774,6 +774,15 @@ ADD COLUMN isante_id varchar(50) AFTER national_id;
 ALTER TABLE isanteplus.patient
 ADD COLUMN contact_name varchar(50) AFTER mother_name;
 
+ALTER TABLE patient_status_arv DROP PRIMARY KEY;
+ALTER TABLE patient_status_arv ADD CONSTRAINT pk_patient_status_arv_new 
+PRIMARY KEY (patient_id,id_status,start_date,date_started_status); 
+/*CREATE INDEX patient_id_index ON patient_status_arv(patient_id);
+CREATE INDEX id_status_index ON patient_status_arv(id_status);
+CREATE INDEX start_date_index ON patient_status_arv(start_date);
+CREATE INDEX date_started_status_index ON patient_status_arv(date_started_status);
+CREATE INDEX last_updated_date_index ON patient_status_arv(last_updated_date);
+*/
 DROP TABLE IF EXISTS openmrs.isanteplus_alert;
 		create table if not exists openmrs.isanteplus_alert(
 		patient_id int(11),

@@ -259,6 +259,7 @@ CREATE TABLE IF NOT EXISTS patient_prescription_day (
 				   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
 				   FROM patient_dispensing_day pdisp 
 				   WHERE pdisp.arv_drug = 1065
+				   AND pdisp.rx_or_prophy = 138405
 				   GROUP BY pdisp.patient_id
 					on duplicate key update
 					visit_id = visit_id,
@@ -500,35 +501,45 @@ DELIMITER ;
 	SET SQL_SAFE_UPDATES = 0;
 	/*SET FOREIGN_KEY_CHECKS = 0;*/
 	
-	/*Insertion for exposed infants*/
+/*Insertion for exposed infants*/
 		/*Le dernier PCR en date doit être négatif fiche Premiere visite VIH pediatrique et Laboratoire 
 			condition_exposee = 1
 		*/
 		truncate table exposed_infants;
-		INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
-	SELECT vt.patient_id,vt.location_id,vt.encounter_id,vt.encounter_date,1
-	FROM virological_tests vt,(SELECT vtest.patient_id,vtest.location_id,vtest.encounter_id,
-	MAX(vtest.encounter_date) as v_date, 1 FROM virological_tests vtest 
-	WHERE vtest.test_id = 162087 AND vtest.answer_concept_id = 1030 GROUP BY 1) B
-	WHERE vt.patient_id = B.patient_id
-	AND vt.encounter_date = B.v_date
-	AND vt.test_id = 162087
-	AND vt.answer_concept_id = 1030
-	AND vt.test_result = 664;
 		
 	/*	PCR_Concept_id=844,Positif=1301,Negatif=1302,Equivoque=1300,Echantillon de pauvre qualite=1304
-		Fiche laboratoire, condition_exposee = 2
+		Fiche laboratoire, condition_exposee = 1
 		*/
-	INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
-	SELECT pl.patient_id,pl.location_id,pl.encounter_id,pl.visit_date,2
-	FROM patient_laboratory pl,(SELECT plab.patient_id,plab.location_id,
-	plab.encounter_id, MAX(plab.visit_date) as v_date,2 FROM patient_laboratory plab 
-	WHERE plab.test_id = 844 GROUP BY 1) B
-	WHERE pl.patient_id = B.patient_id
-	AND pl.visit_date = B.v_date
-	AND pl.test_id = 844
-	AND pl.test_done = 1
-	AND pl.test_result = 1302;
+	/* Dernier PCR negatif */
+	DROP table IF EXISTS patient_pcr_negative;
+		CREATE TEMPORARY TABLE IF NOT EXISTS patient_pcr_negative
+		SELECT o.person_id as patient_id, o.encounter_id, o.location_id, e.encounter_datetime as encounter_date, o.concept_id, o.value_coded, o.obs_datetime
+		FROM openmrs.obs o, openmrs.encounter e, openmrs.encounter_type et,
+		(SELECT en.patient_id, MAX(en.encounter_datetime) as visit_date FROM openmrs.obs ob,
+		openmrs.encounter en, openmrs.encounter_type ety
+		WHERE ob.encounter_id = en.encounter_id 
+		AND en.encounter_type = ety.encounter_type_id AND ob.concept_id IN (1030, 844)
+		AND ety.uuid IN('349ae0b4-65c1-4122-aa06-480f186c8350','f037e97b-471e-4898-a07c-b8e169e0ddc4')
+		AND ob.voided <> 1 AND en.voided <> 1 GROUP BY 1) B
+		WHERE o.person_id = e.patient_id
+		AND o.encounter_id = e.encounter_id
+		AND e.encounter_type = et.encounter_type_id
+		AND e.patient_id = B.patient_id
+		AND DATE(e.encounter_datetime) = DATE(B.visit_date)
+		AND et.uuid IN ('349ae0b4-65c1-4122-aa06-480f186c8350','f037e97b-471e-4898-a07c-b8e169e0ddc4')
+		AND o.concept_id IN (1030, 844)
+		AND (o.value_coded = 664 OR o.value_coded = 1302)
+		AND o.voided <> 1
+		AND e.voided <> 1;
+	
+		INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
+		SELECT ppn.patient_id,ppn.location_id,ppn.encounter_id,ppn.encounter_date,1
+		FROM patient_pcr_negative ppn
+		WHERE (ppn.concept_id = 1030 AND ppn.value_coded = 664)
+			  OR (ppn.concept_id = 844 AND ppn.value_coded = 1302);
+			  
+	DROP table IF EXISTS patient_pcr_negative;
+	
 	/*	Condition B - Enfant exposé doit être coché
 		Fiche Premiere visit VIH pediatrique
 		condition_exposee = 3
@@ -551,56 +562,66 @@ DELIMITER ;
 		*/
 		INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
 		select distinct pdisp.patient_id,pdisp.location_id,pdisp.encounter_id,pdisp.visit_date,4
-		from patient_dispensing_day pdisp, (select ppres.patient_id, 
-					MAX(ppres.visit_date) as visit_date FROM patient_dispensing_day ppres 
+		from patient_dispensing pdisp, (select ppres.patient_id, 
+					MAX(ppres.visit_date) as visit_date FROM patient_dispensing ppres 
 					WHERE ppres.arv_drug = 1065 GROUP BY 1) B
 		WHERE pdisp.patient_id = B.patient_id
 		AND pdisp.visit_date = B.visit_date
 		AND pdisp.rx_or_prophy = 163768
 		AND pdisp.arv_drug = 1065; 
 		
-		
-	
 	/*End insertion for exposed infants*/
-	/*Delete all patient with PCR positive from exposed_infants table*/
-	DROP table IF EXISTS patient_pcr_temp_day;
-	CREATE TEMPORARY TABLE IF NOT EXISTS patient_pcr_temp_day
-	SELECT distinct o.person_id as patient_id, o.encounter_id as encounter_id,
-	o.concept_id as concept_id, o.value_coded as value_coded
-	FROM openmrs.obs o,
-	(select e.patient_id, MAX(e.encounter_id) as encounter_id, ob1.concept_id FROM openmrs.encounter e, openmrs.obs ob1 
-	WHERE e.patient_id = ob1.person_id AND e.encounter_id = ob1.encounter_id AND (ob1.concept_id IN (844,1030) OR ob1.value_coded = 844) GROUP BY 1) C
-	WHERE o.person_id = C.patient_id
-		AND o.encounter_id = C.encounter_id
-        AND o.concept_id = C.concept_id;
-		
+	/*Delete patients from the exposed_infants whose have a Positive PCR*/
 	
-	DELETE FROM exposed_infants WHERE 
-	patient_id IN (SELECT ppt.patient_id FROM patient_pcr_temp_day ppt WHERE 
-	ppt.concept_id IN (844,1030) AND ppt.value_coded IN(703,1301));
+	/*Patient with PCR positive*/
+		DROP table IF EXISTS patient_pcr_positif;
+		CREATE TEMPORARY TABLE IF NOT EXISTS patient_pcr_positif
+		SELECT o.person_id as patient_id, o.concept_id, o.value_coded, o.obs_datetime
+		FROM openmrs.obs o, openmrs.encounter e, openmrs.encounter_type et
+		WHERE o.person_id = e.patient_id
+		AND o.encounter_id = e.encounter_id
+		AND e.encounter_type = et.encounter_type_id
+		AND et.uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
+		AND o.concept_id = 1030
+		AND o.value_coded = 703
+		AND o.voided <> 1;
 	
-	truncate table patient_pcr_temp_day;
+		INSERT INTO patient_pcr_positif(patient_id, concept_id, value_coded, obs_datetime)
+		SELECT o.person_id as patient_id, o.concept_id, o.value_coded, o.obs_datetime
+		FROM openmrs.obs o, openmrs.encounter e, openmrs.encounter_type et
+		WHERE o.person_id = e.patient_id
+		AND o.encounter_id = e.encounter_id
+		AND e.encounter_type = et.encounter_type_id
+		AND et.uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
+		AND o.concept_id = 844
+		AND o.value_coded = 1301
+		AND o.voided <> 1;
 	
+	DELETE exposed_infants FROM exposed_infants, patient_pcr_positif 
+	WHERE exposed_infants.patient_id = patient_pcr_positif.patient_id;
+	
+	DROP table IF EXISTS patient_pcr_positif;
+	/*END for Delete patient from the exposed_infants whose have a Positive PCR*/
 	/*Delete from exposed_infants where patient has a HIV Positive TEST */
-	DELETE FROM exposed_infants WHERE 
-	patient_id IN (SELECT pl.patient_id FROM patient_laboratory pl, patient p 
+	DELETE exposed_infants FROM exposed_infants,
+	(SELECT pl.patient_id FROM patient_laboratory pl, patient p 
 	WHERE pl.patient_id = p.patient_id AND pl.test_id = 1040 
-	AND pl.test_done = 1 AND pl.test_result = 703 
-	AND (TIMESTAMPDIFF(MONTH, p.birthdate,DATE(now())) >= 18));
+	AND pl.test_done = 1 AND pl.test_result = 703 AND pl.voided <> 1
+	AND (TIMESTAMPDIFF(MONTH, p.birthdate,DATE(now())) >= 18)) C
+	WHERE exposed_infants.patient_id = C.patient_id;
 	
 	/*DELETE from exposed_infants where VIH positif - confirmé par test sérologique > 18 mois*/
-	DELETE FROM exposed_infants WHERE patient_id IN
-	(select distinct ob.person_id from openmrs.obs ob, openmrs.encounter enc, openmrs.encounter_type ent,
-	(select o.person_id, MAX(DATE(o.obs_datetime)) as obs_date 
-	from openmrs.obs o WHERE o.concept_id = 1401 AND o.value_coded = 1405 GROUP BY 1) B
-					WHERE ob.encounter_id	=	enc.encounter_id
-					AND enc.encounter_type	=	ent.encounter_type_id
-					AND ob.person_id = B.person_id
-                    AND ob.concept_id = 1401
-					AND ob.value_coded = 163717
-					AND (ent.uuid =	"349ae0b4-65c1-4122-aa06-480f186c8350"
-						OR ent.uuid = "33491314-c352-42d0-bd5d-a9d0bffc9bf1")
-					AND DATE(enc.encounter_datetime) > B.obs_date);
+	DELETE exposed_infants FROM exposed_infants,
+	(select distinct ob.person_id from openmrs.obs ob, openmrs.encounter enc, openmrs.encounter_type ent
+	WHERE ob.encounter_id	=	enc.encounter_id
+	AND enc.encounter_type	=	ent.encounter_type_id
+	AND ob.person_id = enc.patient_id
+    AND ob.concept_id = 1401
+	AND ob.value_coded = 163717
+	AND ob.voided <> 1
+	AND (ent.uuid =	"349ae0b4-65c1-4122-aa06-480f186c8350"
+	OR ent.uuid = "33491314-c352-42d0-bd5d-a9d0bffc9bf1")) C
+	WHERE exposed_infants.patient_id = C.person_id;
 						
 	/*	Condition 5 - Séroréversion doit être coché
 		Rapport d'arrêt du programme soins et traitement VIH/SIDA
@@ -615,8 +636,9 @@ DELIMITER ;
 					AND enc.encounter_type	=	ent.encounter_type_id
                     AND ob.concept_id = 1667
 					AND ob.value_coded = 165439
+					AND ob.voided <> 1
 					AND ent.uuid =	"9d0113c6-f23a-4461-8428-7e9a7344f2ba";
-	
+		
 	/*TRUNCATE TABLE patient_status_arv;*/
 		/*Insertion for patient_status Décédés=1,Arrêtés=2,Transférés=3 on ARV
 		We use max(start_date) OR max(date_started) because
@@ -624,33 +646,56 @@ DELIMITER ;
 	*/
 	/*Starting patient_status_arv*/
 /*====================================================*/
-/*Insertion for patient_status Décédés en Pré-ARV=4,
-Transférés en Pré-ARV=5*/
+	/*Insertion for patient_status Décédés en Pré-ARV=4 */
 INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
-	SELECT v.patient_id,
-	CASE WHEN (ob.value_coded=159) THEN 4
-	WHEN (ob.value_coded=159492) THEN 5
-	END as id_status,DATE(v.date_started) AS start_date, enc.encounter_id as encounter_id, now(), now()
+	SELECT v.patient_id,4 AS id_status,DATE(v.date_started) AS start_date, 
+	enc.encounter_id as encounter_id, now(), now()
 	FROM isanteplus.patient ispat,openmrs.visit v,
 	openmrs.encounter_type entype,openmrs.encounter enc,
-	isanteplus.obs_by_day ob, (SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
+	openmrs.obs ob, (SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
 						FROM openmrs.visit pvi where pvi.voided = 0 GROUP BY 1) B
-	WHERE ispat.patient_id=v.patient_id
-	AND v.visit_id=enc.visit_id
-	AND entype.encounter_type_id=enc.encounter_type
-	AND enc.encounter_id=ob.encounter_id
+	WHERE ispat.patient_id = v.patient_id
+	AND v.visit_id = enc.visit_id
+	AND entype.encounter_type_id = enc.encounter_type
+	AND enc.encounter_id = ob.encounter_id
 	AND v.patient_id = B.patient_id
 	AND v.date_started = B.visit_date
-	AND entype.uuid='9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-	AND ob.concept_id=161555
-	AND ispat.vih_status=1
+	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+	AND ob.concept_id = 161555
+	AND ob.value_coded = 159
+	AND ispat.vih_status = 1
 	AND enc.patient_id NOT IN(SELECT parv.patient_id 
 	FROM isanteplus.patient_on_arv parv)
-	AND ob.value_coded IN(159,159492)
 	AND ob.voided = 0
 	GROUP BY v.patient_id
 	on duplicate key update 
 	last_updated_date = values(last_updated_date);
+	/*Insertion for patient_status Transférés en Pré-ARV=5*/
+	INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
+	SELECT v.patient_id,5 AS id_status,DATE(v.date_started) AS start_date, 
+	enc.encounter_id as encounter_id, now(), now()
+	FROM isanteplus.patient ispat,openmrs.visit v,
+	openmrs.encounter_type entype,openmrs.encounter enc,
+	openmrs.obs ob, (SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
+						FROM openmrs.visit pvi where pvi.voided = 0 GROUP BY 1) B
+	WHERE ispat.patient_id = v.patient_id
+	AND v.visit_id = enc.visit_id
+	AND entype.encounter_type_id = enc.encounter_type
+	AND enc.encounter_id = ob.encounter_id
+	AND v.patient_id = B.patient_id
+	AND v.date_started = B.visit_date
+	AND entype.uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+	AND ob.concept_id = 161555
+	AND ob.value_coded = 159492
+	AND ispat.vih_status = 1
+	AND enc.patient_id NOT IN(SELECT parv.patient_id 
+	FROM isanteplus.patient_on_arv parv)
+	AND ob.voided = 0
+	GROUP BY v.patient_id
+	on duplicate key update 
+	last_updated_date = values(last_updated_date);
+	
+	
 	/*Insertion for patient_status réguliers=6*/
 	INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,last_updated_date, date_started_status)
 	SELECT pdis.patient_id,6 as id_status,MAX(DATE(pdis.visit_date)) as start_date,pdis.encounter_id as encounter_id,
@@ -801,38 +846,51 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 	/*=========================================================*/
 	/*INSERTION for patient status Recent on PRE-ART=7,Actifs en Pré-ARV=11 */
 INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,last_updated_date,date_started_status)
-	SELECT v.patient_id,
-	CASE WHEN 
-		(TIMESTAMPDIFF(MONTH,v.date_started,DATE(now()))<=12)
-		AND (entype.uuid IN('17536ba6-dd7c-4f58-8014-08c7cb798ac7',
-		'349ae0b4-65c1-4122-aa06-480f186c8350')) THEN 7
-	   WHEN 
-	   (TIMESTAMPDIFF(MONTH, v.date_started,DATE(now()))<=12) 
-		AND (entype.uuid IN('204ad066-c5c2-4229-9a62-644bc5617ca2',
-		'33491314-c352-42d0-bd5d-a9d0bffc9bf1',
-		'10d73929-54b6-4d18-a647-8b7316bc1ae3',
-		'a9392241-109f-4d67-885b-57cc4b8c638f',
-		'f037e97b-471e-4898-a07c-b8e169e0ddc4')) THEN 11
-	END,
+	SELECT v.patient_id,7 AS id_status,
 	MAX(DATE(v.date_started)) AS start_date, enc.encounter_id as encounter_id, now(), now()
 	FROM isanteplus.patient ispat,
 	openmrs.visit v,openmrs.encounter enc,
 	openmrs.encounter_type entype,(SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
 						FROM openmrs.visit pvi WHERE pvi.voided <> 1 GROUP BY 1) B
-	WHERE ispat.patient_id=v.patient_id
-	AND v.visit_id=enc.visit_id 
-	AND enc.encounter_type=entype.encounter_type_id
+	WHERE ispat.patient_id = v.patient_id
+	AND v.visit_id = enc.visit_id 
+	AND enc.encounter_type = entype.encounter_type_id
 	AND v.patient_id = B.patient_id
 	AND v.date_started = B.visit_date
 	AND enc.patient_id NOT IN 
 	(SELECT dreason.patient_id FROM discontinuation_reason dreason
 	WHERE dreason.reason IN(159,159492))
-	AND ispat.vih_status=1
+	AND ispat.vih_status = 1
 	AND ispat.patient_id NOT IN (SELECT parv.patient_id
 	FROM isanteplus.patient_on_arv parv)
 	AND entype.uuid IN('17536ba6-dd7c-4f58-8014-08c7cb798ac7',
-		'349ae0b4-65c1-4122-aa06-480f186c8350',
-		'204ad066-c5c2-4229-9a62-644bc5617ca2',
+		'349ae0b4-65c1-4122-aa06-480f186c8350'
+		)
+	AND (TIMESTAMPDIFF(MONTH,v.date_started,DATE(now()))<=12)
+	GROUP BY v.patient_id
+	on duplicate key update 
+	last_updated_date = values(last_updated_date);
+	
+	/*INSERTION for patient status Actifs en Pré-ARV=11 */
+INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,last_updated_date,date_started_status)
+	SELECT v.patient_id,11 AS id_status,
+	MAX(DATE(v.date_started)) AS start_date, enc.encounter_id as encounter_id, now(), now()
+	FROM isanteplus.patient ispat,
+	openmrs.visit v,openmrs.encounter enc,
+	openmrs.encounter_type entype,(SELECT pvi.patient_id, MAX(DATE(pvi.date_started)) as visit_date 
+						FROM openmrs.visit pvi WHERE pvi.voided <> 1 GROUP BY 1) B
+	WHERE ispat.patient_id = v.patient_id
+	AND v.visit_id = enc.visit_id 
+	AND enc.encounter_type = entype.encounter_type_id
+	AND v.patient_id = B.patient_id
+	AND v.date_started = B.visit_date
+	AND enc.patient_id NOT IN 
+	(SELECT dreason.patient_id FROM discontinuation_reason dreason
+	WHERE dreason.reason IN(159,159492))
+	AND ispat.vih_status = 1
+	AND ispat.patient_id NOT IN (SELECT parv.patient_id
+	FROM isanteplus.patient_on_arv parv)
+	AND entype.uuid IN('204ad066-c5c2-4229-9a62-644bc5617ca2',
 		'33491314-c352-42d0-bd5d-a9d0bffc9bf1',
 		'10d73929-54b6-4d18-a647-8b7316bc1ae3',
 		'a9392241-109f-4d67-885b-57cc4b8c638f',
@@ -886,13 +944,13 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 	/*Arrêtés=3*/
 	INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 	last_updated_date, date_started_status)
-	SELECT v.patient_id,3 as id_status, MAX(DATE(v.date_started)) AS start_date, 
+	SELECT enc.patient_id,3 as id_status, MAX(DATE(enc.encounter_datetime)) AS start_date, 
 	enc.encounter_id as encounter_id, now(), now()
 	FROM openmrs.encounter enc,
 	openmrs.encounter_type entype,isanteplus.obs_by_day ob, 
 	isanteplus.obs_by_day ob2,isanteplus.patient_on_arv parv
 	WHERE enc.encounter_type = entype.encounter_type_id
-	AND enc.patient_id = ob.patient_id
+	AND enc.patient_id = ob.person_id
 	AND enc.encounter_id = ob.encounter_id
 	AND enc.patient_id = parv.patient_id
 	AND ob.encounter_id = ob2.encounter_id
@@ -916,10 +974,11 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 		   WHERE psarv.patient_id=dreason.patient_id
 		   AND psarv.start_date <= dreason.visit_date;	
 	/*Delete Exposed infants from patient_arv_status*/
-	DELETE FROM patient_status_arv_day WHERE 
-	patient_id IN (SELECT ei.patient_id FROM exposed_infants ei);
+	DELETE patient_status_arv_day FROM patient_status_arv_day,exposed_infants
+	WHERE patient_status_arv_day.patient_id = exposed_infants.patient_id;
+	
    /*Update patient table for having the last patient arv status*/
-   update patient p,patient_status_arv psa, 
+   update patient p,patient_status_arv_day psa, 
    (SELECT psarv.patient_id, MAX(psarv.last_updated_date) as last_updated_date 
 	                       FROM patient_status_arv_day psarv GROUP BY 1) B
      SET p.arv_status = psa.id_status
@@ -935,7 +994,6 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 		GROUP BY ps.patient_id
 		on duplicate key update 
 		last_updated_date = values(last_updated_date);
-		
 		
 	END$$
 DELIMITER ;
@@ -978,8 +1036,7 @@ DELIMITER ;
 			join patient p on d1.patient_id = p.patient_id
 			join (select distinct drugID1 from regimen) r
 			on r.drugID1 = d1.drug_id
-			where p.vih_status = 1
-			AND d1.arv_drug = 1065
+			where d1.arv_drug = 1065
 			AND d1.voided <> 1;
 
 			insert into pepfarTableTemp_day (location_id, patient_id, visit_date, regimen, rx_or_prophy)
@@ -1051,7 +1108,7 @@ DELIMITER ;
 			drop temporary table twoDrugRegimenPrefixTemp_day;
 			drop temporary table pepfarTableTemp_day;
 			
-        /*Transfer next_visit_date, date_started_arv, petient_status to 
+        /*Transfer next_visit_date, date_started_arv, patient_status to 
 		openmrs.isanteplus_patient_arv table*/
 		INSERT INTO openmrs.isanteplus_patient_arv
 		(patient_id, arv_status, date_started_arv, next_visit_date, date_created, date_changed)
@@ -1071,12 +1128,13 @@ DELIMITER ;
 		next_visit_date = p.next_visit_date,
 		date_changed = now();
 		
-		delete from obs_by_day where obs_id < (select lo.obs_id from last_obs lo);
+		/*delete from obs_by_day where obs_id < (select lo.obs_id from last_obs lo);*/
 			
 		TRUNCATE TABLE patient_dispensing_day;
 		TRUNCATE TABLE patient_prescription_day;		
 		TRUNCATE TABLE patient_status_arv_day;	
 		TRUNCATE TABLE last_obs;
+		TRUNCATE TABLE obs_by_day;
 
 		END$$
 	DELIMITER ;
