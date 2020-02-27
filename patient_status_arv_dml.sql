@@ -732,15 +732,18 @@ DELIMITER $$
 		
 		INSERT INTO alert (patient_id,id_alert,encounter_id, date_alert,last_updated_date)
 		select distinct ob.person_id, 5, ob.encounter_id, DATE(ob.obs_datetime), now()
-		from openmrs.encounter e, openmrs.obs ob, (select o.person_id, max(DATE(o.obs_datetime)) as obs_date
+		from openmrs.encounter e, openmrs.obs ob, isanteplus.patient p, (select o.person_id, max(DATE(o.obs_datetime)) as obs_date
 					FROM openmrs.obs o
 					WHERE o.concept_id IN (856,1305) AND o.voided <> 1 group by 1) B
 					WHERE e.patient_id = ob.person_id
+					AND ob.person_id = p.patient_id
 					AND ob.person_id = B.person_id
 					AND DATE(ob.obs_datetime) = DATE(B.obs_date)
 					AND ((ob.concept_id = 856 AND ob.value_numeric > 1000)
 						OR (ob.concept_id = 1305 AND ob.value_coded = 1301))
-				AND (TIMESTAMPDIFF(MONTH, DATE(ob.obs_datetime),DATE(now())) >= 3) AND ob.voided <> 1;
+				AND (TIMESTAMPDIFF(MONTH, DATE(ob.obs_datetime),DATE(now())) >= 3) 
+				AND p.arv_status NOT IN(1,2,3)
+				AND ob.voided <> 1;
 	
 	/*patient avec une dernière charge viral >1000 copies/ml*/
 	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)		
@@ -1015,13 +1018,13 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 				 
 				 
 				 /* Dernière charge virale de ce patient remonte à au moins 3 mois et le résultat était supérieur 1000 copies/ml */
-			 	/*INSERT INTO openmrs.patientflags_flag VALUES 
+			 	INSERT INTO openmrs.patientflags_flag VALUES 
 				(5,'Le patient a au moins 3 mois de sa dernière charge virale supérieur à 1000 copies/ml',
 				'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 5',
 				'Le patient a au moins 3 mois de sa dernière charge virale supérieur à 1000 copies/ml',1,
 				'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
 				NULL,1,'2018-05-28 02:18:18',1,'2018-05-31 13:43:43',0,NULL,NULL,NULL,
-				'8c176fcb-9354-43fa-b13c-c293e6f910dc',1);*/
+				'8c176fcb-9354-43fa-b13c-c293e6f910dc',1);
 				/*Le patient doit venir renflouer ses ARV dans les 30 prochains jours*/
 				INSERT INTO openmrs.patientflags_flag VALUES 
 				(7,'Le patient doit venir renflouer ses ARV dans les 30 prochains jours',
@@ -1055,7 +1058,7 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 				NULL,1,'2020-02-05 02:18:18',1,'2020-02-05 13:43:43',0,NULL,NULL,NULL,
 				'c26c358d-ec66-4588-8546-e39511723ded',2);
 				 
-		INSERT INTO openmrs.patientflags_flag_tag VALUES (2,2),(4,2),(7,2),(8,2),(9,2),(10,2);
+		INSERT INTO openmrs.patientflags_flag_tag VALUES (2,2),(4,2),(5,2),(7,2),(8,2),(9,2),(10,2);
 		INSERT INTO openmrs.patientflags_tag_displaypoint VALUES (2,1);
 		
 		/*Update global_property to Set where the alert should appear*/			

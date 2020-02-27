@@ -1982,7 +1982,7 @@ INSERT into virological_tests
 	END$$
 	DELIMITER ;
 	
-	call isantepatientstatus();
+	/*call isantepatientstatus();*/
 	
 	/*
 	INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,

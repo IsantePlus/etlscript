@@ -986,7 +986,13 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 	 AND psa.patient_id = B.patient_id
 	 AND DATE(psa.last_updated_date) = DATE(B.last_updated_date);
 	/*End of patient Status*/
-
+	/*Delete data from patient_status_arv that contain patient_status_arv_day*/
+	DELETE patient_status_arv FROM patient_status_arv, patient_status_arv_day psad
+	WHERE patient_status_arv.patient_id = psad.patient_id
+	AND patient_status_arv.id_status = psad.id_status
+	AND patient_status_arv.start_date = psad.start_date
+	AND DATE(patient_status_arv.date_started_status) = DATE(psad.date_started_status);
+	/*Transfer data from patient_status_arv_day to patient_status_arv*/
 	INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last_updated_date,
 		date_started_status)
 	SELECT ps.patient_id,ps.id_status,ps.start_date,ps.encounter_id,ps.last_updated_date,
