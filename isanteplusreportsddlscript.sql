@@ -33,6 +33,7 @@ CREATE TABLE if not exists `patient` (
   `next_visit_date` DATE,
   `last_inserted_date` datetime DEFAULT NULL,
   `last_updated_date` datetime DEFAULT NULL,
+  `transferred_in` int(11),
   PRIMARY KEY (`patient_id`),
   KEY `location_id` (`location_id`),
   CONSTRAINT `patient_ibfk_1` FOREIGN KEY (`location_id`) REFERENCES openmrs.`location`(`location_id`)

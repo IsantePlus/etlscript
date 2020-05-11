@@ -198,6 +198,13 @@ DELIMITER $$
 			WHERE p.patient_id = po.person_id;
 			
 			DROP TABLE patient_obs_temp;
+			
+			UPDATE patient p, openmrs.obs o ,openmrs.concept c
+			SET p.transferred_in =(CASE WHEN o.value_coded = 1065 THEN 1 ELSE 0 END)
+			WHERE o.concept_id = c.concept_id
+			AND c.uuid = '84ea41d3-fc79-418b-ae8c-6a8cf27de66e'
+			AND o.person_id = p.patient_id
+			AND o.voided = 0;		
 			/*End of DML queries*/
 		END$$
 DELIMITER ;
