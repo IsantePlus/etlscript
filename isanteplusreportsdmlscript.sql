@@ -2481,6 +2481,25 @@ INSERT INTO virological_tests
 	 AND o.value_coded=160152
 	 AND o.voided = 0;
 	
+	INSERT INTO isanteplus.patient_on_art(patient_id)
+	SELECT DISTINCT
+	 pa.patient_id
+	 FROM isanteplus.patient_on_arv pa
+	 WHERE pa.voided = 0;
+	 
+	UPDATE isanteplus.patient_on_art par ,openmrs.obs o
+	 SET par.date_completed_preventive_tb_treatment  = DATE (o.value_datetime) 
+	 WHERE par.patient_id = o.person_id  
+	 AND o.concept_id = 163284
+	 AND o.voided = 0;
+	 
+	 UPDATE isanteplus.patient_on_art par ,openmrs.encounter_type et ,openmrs.encounter e
+	 SET par.receive_clinical_followup =1
+	 WHERE  et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2' , '33491314-c352-42d0-bd5d-a9d0bffc9bf1' )	 
+	 AND et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350')
+	 AND et.encounter_type_id = e.encounter_type
+	 AND e.patient_id =par.patient_id 
+	 
 	-- COMMIT
 	
 	END$$
