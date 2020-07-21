@@ -978,17 +978,18 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    date_lost DATETIME,
    period_lost varchar(10) DEFAULT NULL,
    cause_of_death_for_lost varchar(10) DEFAULT NULL,
-   viral_load_result varchar(10) DEFAULT NULL,
-   viral_load_targeted varchar(10) DEFAULT NULL,
+   viral_load_targeted int(11) DEFAULT NULL,
+   viral_load_targeted_result int(11) DEFAULT NULL,
    resumed_arv_after_lost int(11) DEFAULT NULL,
    cervical_cancer_screenee int(11) DEFAULT NULL,
    cervical_cancer_status varchar(10) DEFAULT NULL,
    cervical_cancer_screening_after_first_time int(11) DEFAULT NULL,
    cervical_cancer_screening_after_first_treat int(11) DEFAULT NULL,
+   cervical_cancer_screening_after_first_neg int(11) DEFAULT NULL,
    cervical_cancer_treatment varchar(10) DEFAULT NULL,
    recomended_family_planning int(11) DEFAULT NULL,
    accepted_family_planning_method varchar(10) DEFAULT NULL,
    using_family_planning_method varchar(10) DEFAULT NULL,	
-	constraint pk_patient_art PRIMARY KEY (patient_id, encounter_id, location_id));
+	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/

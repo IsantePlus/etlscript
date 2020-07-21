@@ -2498,7 +2498,7 @@ INSERT INTO virological_tests
 	 WHERE  et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2' , '33491314-c352-42d0-bd5d-a9d0bffc9bf1' )	 
 	 AND et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350')
 	 AND et.encounter_type_id = e.encounter_type
-	 AND e.patient_id =par.patient_id 
+	 AND e.patient_id =par.patient_id ;
 	 
 	-- COMMIT
 	
