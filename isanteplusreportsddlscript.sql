@@ -989,7 +989,10 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    cervical_cancer_treatment varchar(10) DEFAULT NULL,
    recomended_family_planning int(11) DEFAULT NULL,
    accepted_family_planning_method varchar(10) DEFAULT NULL,
-   using_family_planning_method varchar(10) DEFAULT NULL,	
+   using_family_planning_method varchar(10) DEFAULT NULL,
+	first_vist_date  DATETIME,
+	second_last_folowup_vist_date  DATETIME,
+	last_folowup_vist_date  DATETIME,		
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/
