@@ -2523,6 +2523,15 @@ INSERT INTO virological_tests
 	 
 	 ) ;
 	 
+	 
+	  UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c ,openmrs.encounter e	,openmrs.encounter_type etyp
+	   SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
+	   WHERE o.concept_id = 159599 
+	   AND o.encounter_id = e.encounter_id
+	   AND e.encounter_type = etyp.encounter_type_id 
+	   AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
+	   AND o.person_id = pt.patient_id ;
+	 
 	-- COMMIT
 	
 	END$$

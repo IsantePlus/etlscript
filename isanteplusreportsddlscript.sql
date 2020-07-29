@@ -992,7 +992,8 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    using_family_planning_method varchar(10) DEFAULT NULL,
 	first_vist_date  DATETIME,
 	second_last_folowup_vist_date  DATETIME,
-	last_folowup_vist_date  DATETIME,		
+	last_folowup_vist_date  DATETIME,
+	date_started_arv_for_transfered DATETIME,		
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/
