@@ -993,7 +993,7 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    cervical_cancer_status varchar(10) DEFAULT NULL,
    date_started_cervical_cancer_status DATETIME ,
    cervical_cancer_treatment varchar(10) DEFAULT NULL,
-   date_ cervical_cancer_treatment  DATETIME ,
+   date_cervical_cancer_treatment  DATETIME ,
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/
