@@ -2481,6 +2481,95 @@ INSERT INTO virological_tests
 	 AND o.value_coded=160152
 	 AND o.voided = 0;
 	
+	INSERT INTO isanteplus.patient_on_art(patient_id)
+	SELECT DISTINCT
+	 pa.patient_id
+	 FROM isanteplus.patient_on_arv pa
+	 WHERE pa.voided = 0;
+	 
+	UPDATE isanteplus.patient_on_art par ,openmrs.obs o
+	 SET par.date_completed_preventive_tb_treatment  = DATE (o.value_datetime) 
+	 WHERE par.patient_id = o.person_id  
+	 AND o.concept_id = 163284
+	 AND o.voided = 0;
+	 
+	 UPDATE isanteplus.patient_on_art par ,openmrs.encounter_type et ,openmrs.encounter e
+	 SET par.first_vist_date = DATE(e.encounter_datetime) 
+	 WHERE  et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2' , '33491314-c352-42d0-bd5d-a9d0bffc9bf1' )	 
+	 AND et.encounter_type_id = e.encounter_type
+	 AND e.patient_id =par.patient_id 
+	 AND e.voided =0 ;
+	 
+	  
+	 UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	 	 
+	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e
+	  WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	  AND et.encounter_type_id = e.encounter_type
+	  AND e.patient_id =pat.patient_id 
+	  AND  MAX(e.encounter_datetime) IS NOT NULL	 
+	 )
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND et.encounter_type_id = e.encounter_type
+	 AND e.patient_id =pat.patient_id 
+	 AND  MAX(e.encounter_datetime) IS NOT NULL 
+	 AND e.voided = 0;
+	 
+	 UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	
+	 SET pat.second_last_folowup_vist_date = (SELECT MAX(e.encounter_datetime) 
+	 FROM  openmrs.encounter e ,openmrs.encounter_type et ,isanteplus.patient_on_art pat  
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND  e.patient_id =pat.patient_id
+	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) FROM openmrs.encounter_type et , openmrs.encounter e	,isanteplus.patient_on_art pat
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND et.encounter_type_id = e.encounter_type
+	 AND e.patient_id =pat.patient_id 	 
+	 )	)
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND et.encounter_type_id = e.encounter_type
+	 AND e.patient_id =pat.patient_id 
+	 AND e.voided = 0;
+	  
+	 
+	 
+	  UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c ,openmrs.encounter e	,openmrs.encounter_type etyp
+	   SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
+	   WHERE o.concept_id = 159599 
+	   AND o.encounter_id = e.encounter_id
+	   AND e.encounter_type = etyp.encounter_type_id 
+	   AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
+	   AND o.person_id = pt.patient_id 
+		AND o.voided =0;
+	 
+	 UPDATE isanteplus.patient_on_art pt, openmrs.obs o
+	 SET pt.screened_cervical_cancer = (CASE WHEN o.value_coded = 151185 THEN 1 ELSE 0 END)  ,
+	     pt.date_screened_cervical_cancer = DATE (o.obs_datetime) 
+	 WHERE o.obs_group_id = 160714
+	 AND o.concept_id = 1651
+	 AND o.value_coded = 151185 
+	 AND o.person_id = pt.patient_id
+	 AND o.value_coded = 0 
+	 AND o.voided =0 ;
+	 
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 SET pt.cervical_cancer_status = (CASE WHEN o.value_coded = 1115 THEN 'NEGATIVE'
+	                                       WHEN o.value_coded = 1116 THEN 'POSTIVE'
+														WHEN o.value_coded =1117 THEN 'UNKNOWN' END ) ,
+		  pt.date_started_cervical_cancer_status = DATE (o.obs_datetime)  											     
+	 WHERE o.concept_id = 160704 
+	 AND o.person_id = pt.patient_id
+	 AND o.voided =0 ;
+	 
+	UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 SET pt.cervical_cancer_treatment  = (CASE WHEN o.value_coded = 162812 THEN 'CRYOTHERAPY'
+	                                       WHEN o.value_coded = 162810 THEN 'LEEP'
+														WHEN o.value_coded =163408 THEN 'THERMOCOAGULATION' END ) ,
+		  pt.date_cervical_cancer_treatment = DATE (o.obs_datetime)  											     
+	 WHERE o.concept_id = 1651 
+	 AND o.person_id = pt.patient_id
+	 AND o.voided =0 ;
+	
+	 
+	 
 	-- COMMIT
 	
 	END$$
