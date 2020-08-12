@@ -2532,13 +2532,13 @@ INSERT INTO virological_tests
 	 
 	 
 	  UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c ,openmrs.encounter e	,openmrs.encounter_type etyp
-	   SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
-	   WHERE o.concept_id = 159599 
-	   AND o.encounter_id = e.encounter_id
-	   AND e.encounter_type = etyp.encounter_type_id 
-	   AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
-	   AND o.person_id = pt.patient_id 
-		AND o.voided =0;
+	  SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
+	  WHERE o.concept_id = 159599 
+	  AND o.encounter_id = e.encounter_id
+	  AND e.encounter_type = etyp.encounter_type_id 
+	  AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
+	  AND o.person_id = pt.patient_id 
+	  AND o.voided =0;
 	 
 	 UPDATE isanteplus.patient_on_art pt, openmrs.obs o
 	 SET pt.screened_cervical_cancer = (CASE WHEN o.value_coded = 151185 THEN 1 ELSE 0 END)  ,
@@ -2553,16 +2553,16 @@ INSERT INTO virological_tests
 	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
 	 SET pt.cervical_cancer_status = (CASE WHEN o.value_coded = 1115 THEN 'NEGATIVE'
 	                                       WHEN o.value_coded = 1116 THEN 'POSTIVE'
-														WHEN o.value_coded =1117 THEN 'UNKNOWN' END ) ,
+										   WHEN o.value_coded =1117 THEN 'UNKNOWN' END ) ,
 		  pt.date_started_cervical_cancer_status = DATE (o.obs_datetime)  											     
 	 WHERE o.concept_id = 160704 
 	 AND o.person_id = pt.patient_id
 	 AND o.voided =0 ;
 	 
-	UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
 	 SET pt.cervical_cancer_treatment  = (CASE WHEN o.value_coded = 162812 THEN 'CRYOTHERAPY'
 	                                       WHEN o.value_coded = 162810 THEN 'LEEP'
-														WHEN o.value_coded =163408 THEN 'THERMOCOAGULATION' END ) ,
+										   WHEN o.value_coded =163408 THEN 'THERMOCOAGULATION' END ) ,
 		  pt.date_cervical_cancer_treatment = DATE (o.obs_datetime)  											     
 	 WHERE o.concept_id = 1651 
 	 AND o.person_id = pt.patient_id
@@ -2591,19 +2591,19 @@ INSERT INTO virological_tests
 	                                      WHEN o.value_coded = 160432 THEN 'DIED'
 	                                      WHEN o.value_coded = 160036 THEN 'REFERRED'
 	                                      WHEN o.value_coded =162591 THEN 'MEDICAL'
-													  WHEN o.value_coded = 155891 THEN 'DENIAL'
-													  WHEN o.value_coded = 5622  THEN 'OTHER' END) ,
+										  WHEN o.value_coded = 155891 THEN 'DENIAL'
+										  WHEN o.value_coded = 5622  THEN 'OTHER' END) ,
 		  pt.date_non_enrollment = DATE(o.obs_datetime) 
-	WHERE o.concept_id = 1667
-	AND o.person_id = pt.patient_id
-	AND o.voided = 0 ;
+	 WHERE o.concept_id = 1667
+	 AND o.person_id = pt.patient_id
+	 AND o.voided = 0 ;
 								
-	UPDATE isanteplus.patient_on_art pt , openmrs.obs o
-	SET pt.breast_feeding = (CASE WHEN o.value_coded = 1065 THEN 1 ELSE 0 END),
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 SET pt.breast_feeding = (CASE WHEN o.value_coded = 1065 THEN 1 ELSE 0 END),
 	    pt.date_breast_feeding = DATE(o.obs_datetime)
-	WHERE o.concept_id = 5632
-	AND o.person_id = pt.patient_id
-	AND o.voided = 0 ;
+	 WHERE o.concept_id = 5632
+	 AND o.person_id = pt.patient_id
+	 AND o.voided = 0 ;
 				 
 	 
 	   
