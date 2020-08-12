@@ -952,9 +952,9 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
 	enrolled_on_art int(11) DEFAULT NULL,
 	gender varchar(10) DEFAULT NULL,
 	key_population VARCHAR(255),
-	breast_feeding int(11) DEFAULT NULL,
 	tested_hiv_postive int(11) DEFAULT NULL,
-	reason_non_enrollemnt VARCHAR(255),
+	reason_non_enrollment VARCHAR(255),
+	date_non_enrollment DATETIME,
 	enrolled_tb_treatment int(11) DEFAULT NULL,
 	transferred int(11) DEFAULT NULL,
 	tb_screen int(11) DEFAULT NULL,
@@ -994,6 +994,9 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    date_started_cervical_cancer_status DATETIME ,
    cervical_cancer_treatment varchar(10) DEFAULT NULL,
    date_cervical_cancer_treatment  DATETIME ,
+   breast_feeding int(11) DEFAULT NULL,
+   date_breast_feeding  DATETIME ,
+   date_started_breast_feeding  DATETIME,
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/

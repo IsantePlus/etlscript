@@ -2568,7 +2568,46 @@ INSERT INTO virological_tests
 	 AND o.person_id = pt.patient_id
 	 AND o.voided =0 ;
 	
+	 UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c
+	 SET pt.date_started_breast_feeding = DATE(o.obs_datetime)
+	 WHERE o.concept_id = c.concept_id 
+	 AND o.person_id = pt.patient_id
+	 AND c.uuid = '7e0f24aa-4f8e-42d0-8649-282bc3c867e3'
+	 AND o.voided =0 ;
 	 
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o , openmrs.concept c
+	 SET pt.key_population = (CASE WHEN o.value_coded = 160578 THEN 'MSM'
+	                               WHEN o.value_coded = 160579 THEN 'SEX PROFESSIONAL'
+	                               WHEN o.value_coded = 162277 THEN 'CAPTIVE'
+	                               WHEN o.value_coded = 124275  THEN 'TRANSGENDER'
+	                               WHEN o.value_coded = 105 THEN 'DRUG USER' END )
+	 WHERE o.concept_id = c.concept_id
+	 AND o.person_id = pt.patient_id
+	 AND c.uuid = 'b2726cc7-df4b-463c-919d-1c7a600fef87'
+	 AND o.voided = 0 ;
+	 
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o 
+	 SET pt.reason_non_enrollemnt = (CASE WHEN o.value_coded = 127750 THEN 'VOLUNTARY'
+	                                      WHEN o.value_coded = 160432 THEN 'DIED'
+	                                      WHEN o.value_coded = 160036 THEN 'REFERRED'
+	                                      WHEN o.value_coded =162591 THEN 'MEDICAL'
+													  WHEN o.value_coded = 155891 THEN 'DENIAL'
+													  WHEN o.value_coded = 5622  THEN 'OTHER' END) ,
+		  pt.date_non_enrollment = DATE(o.obs_datetime) 
+	WHERE o.concept_id = 1667
+	AND o.person_id = pt.patient_id
+	AND o.voided = 0 ;
+								
+	UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	SET pt.breast_feeding = (CASE WHEN o.value_coded = 1065 THEN 1 ELSE 0 END),
+	    pt.date_breast_feeding = DATE(o.obs_datetime)
+	WHERE o.concept_id = 5632
+	AND o.person_id = pt.patient_id
+	AND o.voided = 0 ;
+				 
+	 
+	   
+	   
 	 
 	-- COMMIT
 	
