@@ -1258,7 +1258,7 @@ UPDATE patient_tb_diagnosis pat, openmrs.obs ob
 		 SET pat.weight_for_height=(CASE 
 										WHEN o.value_coded=1115 THEN 1 -- Normal
 										WHEN o.value_coded=164131 THEN 2 -- SAM
-										WHEN o.value_code=123815 THEN 2 -- MAM
+										WHEN o.value_coded=123815 THEN 2 -- MAM
 									END)
 		 WHERE pat.encounter_id=o.encounter_id
 		 AND o.concept_id=163515
@@ -2501,25 +2501,23 @@ INSERT INTO virological_tests
 	 AND e.voided =0 ;
 	 
 	  
-	 UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	 	 
-	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e
+   UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	 	 
+	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  isanteplus.patient_on_arv pat ,openmrs.encounter_type et , openmrs.encounter e
 	  WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	  AND et.encounter_type_id = e.encounter_type
 	  AND e.patient_id =pat.patient_id 
-	  AND  MAX(e.encounter_datetime) IS NOT NULL	 
 	 )
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND et.encounter_type_id = e.encounter_type
 	 AND e.patient_id =pat.patient_id 
-	 AND  MAX(e.encounter_datetime) IS NOT NULL 
 	 AND e.voided = 0;
 	 
 	 UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	
 	 SET pat.second_last_folowup_vist_date = (SELECT MAX(e.encounter_datetime) 
-	 FROM  openmrs.encounter e ,openmrs.encounter_type et ,isanteplus.patient_on_art pat  
+	 FROM  openmrs.encounter e ,openmrs.encounter_type et ,isanteplus.patient_on_arv pat  
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND  e.patient_id =pat.patient_id
-	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) FROM openmrs.encounter_type et , openmrs.encounter e	,isanteplus.patient_on_art pat
+	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) FROM openmrs.encounter_type et , openmrs.encounter e	,isanteplus.patient_on_arv pat
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND et.encounter_type_id = e.encounter_type
 	 AND e.patient_id =pat.patient_id 	 
@@ -2532,17 +2530,17 @@ INSERT INTO virological_tests
 	 
 	 
 	  UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c ,openmrs.encounter e	,openmrs.encounter_type etyp
-	   SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
-	   WHERE o.concept_id = 159599 
-	   AND o.encounter_id = e.encounter_id
-	   AND e.encounter_type = etyp.encounter_type_id 
-	   AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
-	   AND o.person_id = pt.patient_id 
-		AND o.voided =0;
+	  SET pt.date_started_arv_for_transfered = DATE(o.obs_datetime)
+	  WHERE o.concept_id = 159599 
+	  AND o.encounter_id = e.encounter_id
+	  AND e.encounter_type = etyp.encounter_type_id 
+	  AND etyp.uuid = "17536ba6-dd7c-4f58-8014-08c7cb798ac7"
+	  AND o.person_id = pt.patient_id 
+	  AND o.voided =0;
 	 
 	 UPDATE isanteplus.patient_on_art pt, openmrs.obs o
 	 SET pt.screened_cervical_cancer = (CASE WHEN o.value_coded = 151185 THEN 1 ELSE 0 END)  ,
-	     pt.date_screened_cervical_cancer = DATE (o.obs_datetime) 
+	     pt.date_screened_cervical_cancer = DATE(o.obs_datetime) 
 	 WHERE o.obs_group_id = 160714
 	 AND o.concept_id = 1651
 	 AND o.value_coded = 151185 
@@ -2553,22 +2551,85 @@ INSERT INTO virological_tests
 	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
 	 SET pt.cervical_cancer_status = (CASE WHEN o.value_coded = 1115 THEN 'NEGATIVE'
 	                                       WHEN o.value_coded = 1116 THEN 'POSTIVE'
-														WHEN o.value_coded =1117 THEN 'UNKNOWN' END ) ,
-		  pt.date_started_cervical_cancer_status = DATE (o.obs_datetime)  											     
+										   WHEN o.value_coded =1117 THEN 'UNKNOWN' END ) ,
+		  pt.date_started_cervical_cancer_status = DATE(o.obs_datetime)  											     
 	 WHERE o.concept_id = 160704 
 	 AND o.person_id = pt.patient_id
 	 AND o.voided =0 ;
 	 
-	UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
 	 SET pt.cervical_cancer_treatment  = (CASE WHEN o.value_coded = 162812 THEN 'CRYOTHERAPY'
 	                                       WHEN o.value_coded = 162810 THEN 'LEEP'
-														WHEN o.value_coded =163408 THEN 'THERMOCOAGULATION' END ) ,
-		  pt.date_cervical_cancer_treatment = DATE (o.obs_datetime)  											     
+										   WHEN o.value_coded =163408 THEN 'THERMOCOAGULATION' END ) ,
+		  pt.date_cervical_cancer_treatment = DATE(o.obs_datetime)  											     
 	 WHERE o.concept_id = 1651 
 	 AND o.person_id = pt.patient_id
 	 AND o.voided =0 ;
 	
+	 UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c
+	 SET pt.date_started_breast_feeding = DATE(o.obs_datetime)
+	 WHERE o.concept_id = c.concept_id 
+	 AND o.person_id = pt.patient_id
+	 AND c.uuid = '7e0f24aa-4f8e-42d0-8649-282bc3c867e3'
+	 AND o.voided =0 ;
 	 
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o , openmrs.concept c
+	 SET pt.key_population = (CASE WHEN o.value_coded = 160578 THEN 'MSM'
+	                               WHEN o.value_coded = 160579 THEN 'SEX PROFESSIONAL'
+	                               WHEN o.value_coded = 162277 THEN 'CAPTIVE'
+	                               WHEN o.value_coded = 124275  THEN 'TRANSGENDER'
+	                               WHEN o.value_coded = 105 THEN 'DRUG USER' END )
+	 WHERE o.concept_id = c.concept_id
+	 AND o.person_id = pt.patient_id
+	 AND c.uuid = 'b2726cc7-df4b-463c-919d-1c7a600fef87'
+	 AND o.voided = 0 ;
+	 
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o 
+	 SET pt.reason_non_enrollment = (CASE WHEN o.value_coded = 127750 THEN 'VOLUNTARY'
+	                                      WHEN o.value_coded = 160432 THEN 'DIED'
+	                                      WHEN o.value_coded = 160036 THEN 'REFERRED'
+	                                      WHEN o.value_coded =162591 THEN 'MEDICAL'
+										           WHEN o.value_coded = 155891 THEN 'DENIAL'
+										           WHEN o.value_coded = 5622  THEN 'OTHER' END) ,
+		  pt.date_non_enrollment = DATE(o.obs_datetime) 
+	 WHERE o.concept_id = 1667
+	 AND o.person_id = pt.patient_id
+	 AND o.voided = 0 ;
+								
+	 UPDATE isanteplus.patient_on_art pt , openmrs.obs o
+	 SET pt.breast_feeding = (CASE WHEN o.value_coded = 1065 THEN 1 ELSE 0 END),
+	    pt.date_breast_feeding = DATE(o.obs_datetime)
+	 WHERE o.concept_id = 5632
+	 AND o.person_id = pt.patient_id
+	 AND o.voided = 0 ;
+	 
+	 UPDATE isanteplus.patient_on_art pat ,openmrs.obs o , openmrs.concept c
+	 SET pat.treatment_regime_lines = 'FIRST_LINE' ,
+	     pat.date_started_regime_treatment = DATE(o.obs_datetime) 
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 164432
+	 AND o.value_coded = (SELECT c.concept_id FROM openmrs.concept c WHERE c.uuid = 'dd69cffe-d7b8-4cf1-bc11-3ac302763d48')
+	 AND o.voided =0 ;
+	 
+	 
+	 UPDATE isanteplus.patient_on_art pat ,openmrs.obs o , openmrs.concept c
+	 SET pat.treatment_regime_lines = 'SECOND_LINE' ,
+	     pat.date_started_regime_treatment = DATE(o.obs_datetime) 
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 164432
+	 AND o.value_coded = (SELECT c.concept_id FROM openmrs.concept c WHERE c.uuid = '77488a7b-957f-4ebc-892a-e53e7c910363')
+	 AND o.voided =0 ;
+	 
+	  
+	 UPDATE isanteplus.patient_on_art pat ,openmrs.obs o , openmrs.concept c
+	 SET pat.treatment_regime_lines = 'THIRD_LINE' ,
+	     pat.date_started_regime_treatment = DATE(o.obs_datetime) 
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 164432
+	 AND o.value_coded = (SELECT c.concept_id FROM openmrs.concept c WHERE c.uuid = '99d88c3e-00ad-4122-a300-a88ff5c125c9')
+	 AND o.voided =0 ;	   
+	   
+	   
 	 
 	-- COMMIT
 	
