@@ -2627,9 +2627,12 @@ INSERT INTO virological_tests
 	 WHERE o.person_id = pat.patient_id
 	 AND o.concept_id = 164432
 	 AND o.value_coded = (SELECT c.concept_id FROM openmrs.concept c WHERE c.uuid = '99d88c3e-00ad-4122-a300-a88ff5c125c9')
-	 AND o.voided =0 ;	   
-	   
-	   
+	 AND o.voided =0 ;
+	 	   
+	 UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
+	 SET pat.date_full_6_months_of_inh_has_px = DATE (o.value_datetime)
+	 WHERE o.concept_id = 163284
+	 AND o.voided = 0;
 	 
 	-- COMMIT
 	
