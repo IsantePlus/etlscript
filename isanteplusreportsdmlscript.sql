@@ -2485,7 +2485,9 @@ INSERT INTO virological_tests
 	SELECT DISTINCT
 	 pa.patient_id
 	 FROM isanteplus.patient_on_arv pa
-	 WHERE pa.voided = 0;
+	 WHERE pa.voided = 0
+	 ON DUPLICATE KEY UPDATE 
+	 patient_id = pa.patient_id ;
 	 
 	UPDATE isanteplus.patient_on_art par ,openmrs.obs o
 	 SET par.date_completed_preventive_tb_treatment  = DATE (o.value_datetime) 
@@ -2631,7 +2633,27 @@ INSERT INTO virological_tests
 	 	   
 	 UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
 	 SET pat.date_full_6_months_of_inh_has_px = DATE (o.value_datetime)
-	 WHERE o.concept_id = 163284
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 163284
+	 AND o.voided = 0;
+	 
+	 UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
+	 SET pat.tb_screened = 1 ,
+	     pat.date_tb_screened = DATE (o.obs_datetime)
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 1659
+	 AND o.value_coded IN  (142177,1660) ;
+	 
+	 UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
+    SET pat.tb_status = (CASE WHEN o.value_coded =142177 THEN 'POSTIVE' 
+	                       WHEN o.value_coded = 1660 THEN 'NEGATIVE' END )
+    WHERE o.person_id = pat.patient_id
+    AND o.concept_id = 1659 ;
+    
+    UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
+	 SET pat.date_enrolled_on_tb_treatment = DATE (o.value_datetime)
+	 WHERE o.person_id = pat.patient_id
+	 AND o.concept_id = 1113
 	 AND o.voided = 0;
 	 
 	-- COMMIT
