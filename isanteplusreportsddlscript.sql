@@ -1,5 +1,6 @@
 DROP DATABASE if exists isanteplus; 
 create database if not exists isanteplus;
+ALTER DATABASE isanteplus CHARACTER SET utf8 COLLATE utf8_general_ci;
 SET GLOBAL event_scheduler = 1 ;
 SET innodb_lock_wait_timeout = 250;
 use isanteplus;
@@ -32,6 +33,7 @@ CREATE TABLE if not exists `patient` (
   `next_visit_date` DATE,
   `last_inserted_date` datetime DEFAULT NULL,
   `last_updated_date` datetime DEFAULT NULL,
+  `transferred_in` int(11),
   PRIMARY KEY (`patient_id`),
   KEY `location_id` (`location_id`),
   CONSTRAINT `patient_ibfk_1` FOREIGN KEY (`location_id`) REFERENCES openmrs.`location`(`location_id`)
@@ -376,7 +378,7 @@ DROP TABLE IF EXISTS visit_type;
 	encounter_id int(11),
 	location_id int(11),
 	visit_id int(11),
-	obs_group int(11),
+	obs_group int(11) DEFAULT 0,
 	concept_id int(11),
 	v_type int(11),
 	encounter_date date,
@@ -679,6 +681,74 @@ CREATE TABLE IF NOT EXISTS `openmrs.isanteplus_patient_arv` (
   CONSTRAINT `isanteplus_patient_id_fk` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
+/* <begin malaria surveillance> */
+DROP TABLE IF EXISTS isanteplus.patient_malaria;
+CREATE TABLE IF NOT EXISTS `isanteplus`.`patient_malaria` (
+  `patient_id` INT(11) NOT NULL,
+  `location_id` INT(11) NOT NULL,
+  `visit_id` INT(11) NOT NULL,
+  `visit_date` DATE NOT NULL,
+  `encounter_id` INT(11) NOT NULL,
+  `encounter_type_id` INT(11) NOT NULL,
+  `last_updated_date` DATE NOT NULL, 
+  `voided` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`patient_id`),
+  CONSTRAINT `isanteplus_patient_malaria_patient_id_fk` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`)
+) ENGINE=INNODB DEFAULT CHARSET=utf8;
+	
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN fever_for_less_than_2wks TINYINT(1) AFTER encounter_type_id;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN suspected_malaria TINYINT(1) AFTER fever_for_less_than_2wks;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN confirmed_malaria TINYINT(1) AFTER suspected_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_chloroquine TINYINT(1) AFTER suspected_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_primaquine TINYINT(1) AFTER treated_with_chloroquine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN treated_with_quinine TINYINT(1) AFTER treated_with_primaquine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN microscopic_test TINYINT(1) AFTER treated_with_quinine;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_microscopic_test_result TINYINT(1) AFTER microscopic_test;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN negative_microscopic_test_result TINYINT(1) AFTER positive_microscopic_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_plasmodium_falciparum_test_result TINYINT(1) AFTER negative_microscopic_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN mixed_positive_test_result TINYINT(1) AFTER positive_plasmodium_falciparum_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positive_plasmodium_vivax_test_result TINYINT(1) AFTER mixed_positive_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN rapid_test TINYINT(1) AFTER positive_plasmodium_vivax_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN positve_rapid_test_result TINYINT(1) AFTER rapid_test;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN severe_malaria TINYINT(1) AFTER positve_rapid_test_result;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN hospitallized TINYINT(1) AFTER severe_malaria;
+
+ALTER TABLE  isanteplus.patient_malaria 
+ADD COLUMN confirmed_malaria_preganancy TINYINT(1) AFTER hospitallized;
+
+/* </end malaria surveillance> */
 	
 GRANT SELECT ON isanteplus.* TO 'openmrs_user'@'localhost';
 
@@ -804,7 +874,187 @@ DROP TABLE IF EXISTS openmrs.isanteplus_alert;
 		last_updated_date DATETIME,
 		CONSTRAINT pk_isanteplus_alert PRIMARY KEY (patient_id, id_alert)
 		);
+/* <Begin TB Treatment columns>*/
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN encounter_type_id int(11) AFTER visit_date;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN dyspnea  tinyint(1) AFTER cough_for_2wks_or_more;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_diag_sputum tinyint(1) AFTER dyspnea; 
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_diag_xray tinyint(1) AFTER tb_diag_sputum;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_0 int(11) AFTER tb_diag_xray;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_2 int(11) AFTER tb_test_result_mon_0;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_3 int(11) AFTER tb_test_result_mon_2;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_mon_5 int(11) AFTER tb_test_result_mon_3;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_test_result_end int(11) AFTER tb_test_result_mon_5;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN age_at_visit_years int(11) AFTER tb_test_result_end;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN age_at_visit_months int(11) AFTER age_at_visit_years;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_class_pulmonary tinyint(1) AFTER tb_new_diag;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_class_extrapulmonary tinyint(1) AFTER tb_class_pulmonary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_meningitis tinyint(1) AFTER tb_class_extrapulmonary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_genital tinyint(1) AFTER tb_extra_meningitis;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_pleural tinyint(1) AFTER tb_extra_genital;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_miliary tinyint(1) AFTER tb_extra_pleural;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_gangliponic tinyint(1) AFTER tb_extra_miliary;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_intestinal tinyint(1) AFTER tb_extra_gangliponic;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_extra_other tinyint(1) AFTER tb_extra_intestinal;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_started_treatment tinyint(1) AFTER tb_treatment_start_date;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_medication_provided tinyint(1) AFTER tb_started_treatment;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_hiv_test_result tinyint(1) AFTER status_tb_treatment;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN tb_prophy_cotrimoxazole tinyint(1) AFTER tb_hiv_test_result;
+
+ALTER TABLE  isanteplus.patient_tb_diagnosis 
+ADD COLUMN on_arv tinyint(1) AFTER tb_prophy_cotrimoxazole;
 
 
+/* </End TB Treatment columns> */
 
+/* <begin Nutrition table>*/
+CREATE TABLE IF NOT EXISTS patient_nutrition (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	age_at_visit_years INT(11),
+	age_at_visit_months INT(11),
+	weight DOUBLE,
+	height DOUBLE,
+	bmi DOUBLE,
+	bmi_for_age INT,
+	weight_for_height INT,
+	edema TINYINT(1),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end NUtrition table>*/
 
+/* <begin ob/gyn>*/
+CREATE TABLE IF NOT EXISTS patient_ob_gyn (
+	patient_id INT(11) NOT NULL,
+	location_id INT(11),
+	visit_id INT(11),
+	visit_date DATE,
+	encounter_id INT(11) NOT NULL,
+	encounter_type_id INT(11) NOT NULL,
+	muac INT(11),
+	last_updated_date DATETIME,
+	voided TINYINT(1),
+	PRIMARY KEY (`encounter_id`,location_id),
+	CONSTRAINT FOREIGN KEY (patient_id) REFERENCES isanteplus.patient(patient_id),
+	INDEX(visit_date),
+	INDEX(encounter_id),
+	INDEX(patient_id)
+);
+/* <end ob/gyn>*/
+
+	/*Create table for art reort*/
+	DROP TABLE IF EXISTS patient_on_art;
+	CREATE TABLE IF NOT EXISTS patient_on_art(
+	patient_id int(11),
+	date_completed_preventive_tb_treatment DATETIME ,
+	enrolled_on_art int(11) DEFAULT NULL,
+	gender varchar(10) DEFAULT NULL,
+	key_population VARCHAR(255),
+	tested_hiv_postive int(11) DEFAULT NULL,
+	reason_non_enrollment VARCHAR(255),
+	date_non_enrollment DATETIME,
+	date_enrolled_on_tb_treatment DATETIME ,
+	transferred int(11) DEFAULT NULL,
+	tb_screened int(11) DEFAULT NULL,
+	date_tb_screened DATETIME,
+   tb_status varchar(10) DEFAULT NULL,
+   tb_rif_test int(11) DEFAULT NULL,
+   tb_other_test int(11) DEFAULT NULL,
+   started_anti_tb_treatment int(11) DEFAULT NULL,
+   date_started_anti_tb_treatment DATETIME,
+   tb_bacteriological_test_status varchar(10) DEFAULT NULL,
+   lost int(11) DEFAULT NULL,
+   date_inactive  DATETIME ,
+   inactive_reason VARCHAR(20) DEFAULT NULL,
+   inactive int(11) DEFAULT NULL,
+   deceased int(11) DEFAULT NULL,
+   receive_arv int(11) DEFAULT NULL,
+   date_started_arv DATETIME,
+   date_started_receiving_arv DATETIME,
+   receive_clinical_followup int(11) DEFAULT NULL,
+   treatment_regime_lines varchar(10) DEFAULT NULL,
+   date_started_regime_treatment DATETIME,
+   lost_reason varchar(10) DEFAULT NULL,
+   date_lost DATETIME,
+   period_lost varchar(10) DEFAULT NULL,
+   cause_of_death_for_lost varchar(10) DEFAULT NULL,
+   viral_load_targeted int(11) DEFAULT NULL,
+   viral_load_targeted_result int(11) DEFAULT NULL,
+   resumed_arv_after_lost int(11) DEFAULT NULL,
+   recomended_family_planning int(11) DEFAULT NULL,
+   accepted_family_planning_method varchar(10) DEFAULT NULL,
+   using_family_planning_method varchar(10) DEFAULT NULL,
+	first_vist_date  DATETIME,
+	second_last_folowup_vist_date  DATETIME,
+	last_folowup_vist_date  DATETIME,
+	date_started_arv_for_transfered DATETIME,	
+	screened_cervical_cancer int(11) DEFAULT NULL,
+   date_screened_cervical_cancer DATETIME ,	
+   cervical_cancer_status varchar(10) DEFAULT NULL,
+   date_started_cervical_cancer_status DATETIME ,
+   cervical_cancer_treatment varchar(10) DEFAULT NULL,
+   date_cervical_cancer_treatment  DATETIME ,
+   breast_feeding int(11) DEFAULT NULL,
+   date_breast_feeding  DATETIME ,
+   date_started_breast_feeding  DATETIME,
+   date_full_6_months_of_inh_has_px DATETIME ,
+	constraint pk_patient_art PRIMARY KEY (patient_id));
+
+/* <end patient_art>*/
