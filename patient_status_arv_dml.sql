@@ -10,6 +10,27 @@ DELIMITER $$
 			create unique index patient_status_arv_index on patient_status_arv (patient_id, id_status, start_date);
 		end if;*/
 	SET SQL_SAFE_UPDATES = 0;
+	
+	/*INSERTION for patient on ARV*/
+		/*   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
+		   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
+		   FROM patient_dispensing pdisp 
+		   WHERE pdisp.arv_drug = 1065
+		   AND (pdisp.rx_or_prophy = 138405 OR pdisp.rx_or_prophy is null)
+		   AND pdisp.voided <> 1
+		   GROUP BY pdisp.patient_id
+			on duplicate key update
+			visit_id = visit_id,
+			visit_date = visit_date,
+			last_updated_date = now(); */
+			
+	/*DELETE all patients whose prescription form are modified, 
+	because the provider can put a patient on ART by mistake, and correct the error after */
+			DELETE FROM patient_on_arv WHERE patient_id NOT IN
+					(SELECT pdisp.patient_id FROM patient_dispensing pdisp
+					WHERE pdisp.arv_drug = 1065 AND (pdisp.rx_or_prophy = 138405 
+					OR pdisp.rx_or_prophy is null) AND pdisp.voided <> 1);
+	
 	/*SET FOREIGN_KEY_CHECKS = 0;*/
 	
 	/*Insertion for exposed infants*/
@@ -64,6 +85,8 @@ DELIMITER $$
 					AND enc.encounter_type	=	ent.encounter_type_id
                     AND ob.concept_id = 1401
 					AND ob.value_coded = 1405
+					AND enc.voided <> 1
+					AND ob.voided <> 1
 					AND (ent.uuid =	"349ae0b4-65c1-4122-aa06-480f186c8350"
 						OR ent.uuid = "33491314-c352-42d0-bd5d-a9d0bffc9bf1");
 	
@@ -75,11 +98,12 @@ DELIMITER $$
 		select distinct pdisp.patient_id,pdisp.location_id,pdisp.encounter_id,pdisp.visit_date,4
 		from patient_dispensing pdisp, (select ppres.patient_id, 
 					MAX(ppres.visit_date) as visit_date FROM patient_dispensing ppres 
-					WHERE ppres.arv_drug = 1065 GROUP BY 1) B
+					WHERE ppres.voided <> 1 GROUP BY 1) B
 		WHERE pdisp.patient_id = B.patient_id
 		AND pdisp.visit_date = B.visit_date
 		AND pdisp.rx_or_prophy = 163768
-		AND pdisp.arv_drug = 1065; 
+		AND pdisp.arv_drug = 1065
+		AND pdisp.voided <> 1; 
 		
 	/*End insertion for exposed infants*/
 	/*Delete patients from the exposed_infants whose have a Positive PCR*/
@@ -95,7 +119,8 @@ DELIMITER $$
 		AND et.uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
 		AND o.concept_id = 1030
 		AND o.value_coded = 703
-		AND o.voided <> 1;
+		AND o.voided <> 1
+		AND e.voided <> 1;
 	
 		INSERT INTO patient_pcr_positif(patient_id, concept_id, value_coded, obs_datetime)
 		SELECT o.person_id as patient_id, o.concept_id, o.value_coded, o.obs_datetime
@@ -106,7 +131,8 @@ DELIMITER $$
 		AND et.uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
 		AND o.concept_id = 844
 		AND o.value_coded = 1301
-		AND o.voided <> 1;
+		AND o.voided <> 1
+		AND e.voided <> 1;
 	
 	DELETE exposed_infants FROM exposed_infants, patient_pcr_positif 
 	WHERE exposed_infants.patient_id = patient_pcr_positif.patient_id;
@@ -182,6 +208,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.patient_id NOT IN(SELECT parv.patient_id 
 	FROM isanteplus.patient_on_arv parv)
 	AND ob.voided = 0
+	AND ispat.voided = 0
 	GROUP BY v.patient_id
 	on duplicate key update 
 	last_updated_date = values(last_updated_date);
@@ -206,6 +233,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.patient_id NOT IN(SELECT parv.patient_id 
 	FROM isanteplus.patient_on_arv parv)
 	AND ob.voided = 0
+	AND ispat.voided = 0
 	GROUP BY v.patient_id
 	on duplicate key update 
 	last_updated_date = values(last_updated_date);
@@ -232,6 +260,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	                        'a9392241-109f-4d67-885b-57cc4b8c638f'
 							)
 	AND((DATE(now()) <= pdis.next_dispensation_date))
+	AND pdis.voided <> 1
 	GROUP BY pdis.patient_id
 	on duplicate key update 
 	last_updated_date = values(last_updated_date);
@@ -274,6 +303,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 							) 
 	AND (DATEDIFF(DATE(now()),pdis.next_dispensation_date)<=30)
 	AND((DATE(now()) > pdis.next_dispensation_date))
+	AND pdis.voided <> 1
 	GROUP BY pdis.patient_id
 	on duplicate key update 
 	last_updated_date = values(last_updated_date);
@@ -307,6 +337,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.patient_id IN (SELECT parv.patient_id 
 	FROM isanteplus.patient_on_arv parv)
 	AND pdis.arv_drug = 1065
+	AND pdis.voided <> 1
 	AND (DATE(now()) > pdis.next_dispensation_date)
 	AND (DATEDIFF(DATE(now()),pdis.next_dispensation_date)>30)
 	AND entype.uuid IN ('10d73929-54b6-4d18-a647-8b7316bc1ae3',
@@ -341,6 +372,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.encounter_type=entype.encounter_type_id
 	AND v.patient_id = B.patient_id
 	AND v.date_started = B.visit_date
+	AND v.voided <> 1
 	AND enc.patient_id NOT IN 
 	(SELECT dreason.patient_id FROM discontinuation_reason dreason
 	WHERE dreason.reason IN(159,159492))
@@ -373,6 +405,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.encounter_type = entype.encounter_type_id
 	AND v.patient_id = B.patient_id
 	AND v.date_started = B.visit_date
+	AND v.voided <> 1
 	AND enc.patient_id NOT IN 
 	(SELECT dreason.patient_id FROM discontinuation_reason dreason
 	WHERE dreason.reason IN(159,159492))
@@ -400,6 +433,7 @@ INSERT INTO patient_status_arv(patient_id,id_status,start_date,encounter_id,last
 	AND enc.encounter_type = entype.encounter_type_id
 	AND v.patient_id = B.patient_id
 	AND v.date_started = B.visit_date
+	AND v.voided <> 1
 	AND enc.patient_id NOT IN 
 	(SELECT dreason.patient_id FROM discontinuation_reason dreason
 	WHERE dreason.reason IN(159,159492))
@@ -935,8 +969,9 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 	AND DATE(padis.visit_date) = DATE(B.visit_date)
 	AND (TIMESTAMPDIFF(MONTH,DATE(B.visit_date),DATE(now())) >= 3)
 	AND p.patient_id NOT IN(SELECT DISTINCT pvl.patient_id FROM patient_viral_load pvl)
-	AND p.arv_status NOT IN(1,2,3)
-	AND p.vih_status = 1;
+	AND p.arv_status NOT IN(1,2,3,4)
+	AND p.vih_status = 1
+	AND padis.voided <> 1;
 	
 	DROP TABLE IF EXISTS patient_viral_load;
 	

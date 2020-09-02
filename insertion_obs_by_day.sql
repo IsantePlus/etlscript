@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS patient_prescription_day (
 	CONSTRAINT pk_patient_status_arv_day PRIMARY KEY (patient_id,id_status,start_date)
 	);
 	
+	DROP TABLE IF EXISTS exposed_infants_day;
+	CREATE table IF NOT EXISTS exposed_infants_day(
+		patient_id int(11),
+		location_id int(11),
+		encounter_id int(11),
+		visit_date date,
+		condition_exposee int(11)
+	);
+	
 	DROP TABLE IF EXISTS last_obs;
 	create table if not exists last_obs(
 	obs_id int(11),
@@ -255,16 +264,24 @@ CREATE TABLE IF NOT EXISTS patient_prescription_day (
 				   AND ob2.voided=0;
 				   
 				   /*INSERTION for patient on ARV*/
-				   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
+				 /*  INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
 				   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
 				   FROM patient_dispensing_day pdisp 
 				   WHERE pdisp.arv_drug = 1065
-				   AND pdisp.rx_or_prophy = 138405
+				   AND (pdisp.rx_or_prophy = 138405 OR pdisp.rx_or_prophy is null)
+				   AND pdisp.voided <> 1
 				   GROUP BY pdisp.patient_id
 					on duplicate key update
 					visit_id = visit_id,
 					visit_date = visit_date,
-					last_updated_date = now();
+					last_updated_date = now();*/
+	/*DELETE all patients whose prescription form are modified, 
+	because the provider can put a patient on ART by mistake, and correct the error after */
+			/*DELETE FROM patient_on_arv WHERE patient_id NOT IN
+					(SELECT pdisp.patient_id FROM patient_dispensing pdisp
+					WHERE pdisp.arv_drug = 1065 AND (pdisp.rx_or_prophy = 138405 
+					OR pdisp.rx_or_prophy is null) AND pdisp.voided <> 1);*/
+					
 						
 				/*Insertion drug prescription */
 				
@@ -505,7 +522,7 @@ DELIMITER ;
 		/*Le dernier PCR en date doit être négatif fiche Premiere visite VIH pediatrique et Laboratoire 
 			condition_exposee = 1
 		*/
-		truncate table exposed_infants;
+		truncate table exposed_infants_day;
 		
 	/*	PCR_Concept_id=844,Positif=1301,Negatif=1302,Equivoque=1300,Echantillon de pauvre qualite=1304
 		Fiche laboratoire, condition_exposee = 1
@@ -532,7 +549,7 @@ DELIMITER ;
 		AND o.voided <> 1
 		AND e.voided <> 1;
 	
-		INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
+		INSERT INTO exposed_infants_day(patient_id,location_id,encounter_id,visit_date,condition_exposee)
 		SELECT ppn.patient_id,ppn.location_id,ppn.encounter_id,ppn.encounter_date,1
 		FROM patient_pcr_negative ppn
 		WHERE (ppn.concept_id = 1030 AND ppn.value_coded = 664)
@@ -544,7 +561,7 @@ DELIMITER ;
 		Fiche Premiere visit VIH pediatrique
 		condition_exposee = 3
 	*/
-	INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
+	INSERT INTO exposed_infants_day(patient_id,location_id,encounter_id,visit_date,condition_exposee)
 					select distinct ob.person_id,ob.location_id,ob.encounter_id,
 					DATE(enc.encounter_datetime),3
 					from openmrs.obs ob, openmrs.encounter enc, 
@@ -553,6 +570,8 @@ DELIMITER ;
 					AND enc.encounter_type	=	ent.encounter_type_id
                     AND ob.concept_id = 1401
 					AND ob.value_coded = 1405
+					AND ob.voided <> 1
+					AND enc.voided <> 1
 					AND (ent.uuid =	"349ae0b4-65c1-4122-aa06-480f186c8350"
 						OR ent.uuid = "33491314-c352-42d0-bd5d-a9d0bffc9bf1");
 	
@@ -560,18 +579,19 @@ DELIMITER ;
 		patient_prescription.rx_or_prophy=163768
 		Fiche Ordonance medicale, condition_exposee = 4
 		*/
-		INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
+		INSERT INTO exposed_infants_day(patient_id,location_id,encounter_id,visit_date,condition_exposee)
 		select distinct pdisp.patient_id,pdisp.location_id,pdisp.encounter_id,pdisp.visit_date,4
 		from patient_dispensing pdisp, (select ppres.patient_id, 
 					MAX(ppres.visit_date) as visit_date FROM patient_dispensing ppres 
-					WHERE ppres.arv_drug = 1065 GROUP BY 1) B
+					WHERE ppres.arv_drug = 1065 AND ppres.voided <> 1 GROUP BY 1) B
 		WHERE pdisp.patient_id = B.patient_id
 		AND pdisp.visit_date = B.visit_date
 		AND pdisp.rx_or_prophy = 163768
-		AND pdisp.arv_drug = 1065; 
+		AND pdisp.arv_drug = 1065
+		AND pdisp.voided <> 1; 
 		
 	/*End insertion for exposed infants*/
-	/*Delete patients from the exposed_infants whose have a Positive PCR*/
+	/*Delete patients from the exposed_infants_day whose have a Positive PCR*/
 	
 	/*Patient with PCR positive*/
 		DROP table IF EXISTS patient_pcr_positif;
@@ -584,7 +604,8 @@ DELIMITER ;
 		AND et.uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
 		AND o.concept_id = 1030
 		AND o.value_coded = 703
-		AND o.voided <> 1;
+		AND o.voided <> 1
+		AND e.voided <> 1;
 	
 		INSERT INTO patient_pcr_positif(patient_id, concept_id, value_coded, obs_datetime)
 		SELECT o.person_id as patient_id, o.concept_id, o.value_coded, o.obs_datetime
@@ -595,23 +616,24 @@ DELIMITER ;
 		AND et.uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
 		AND o.concept_id = 844
 		AND o.value_coded = 1301
-		AND o.voided <> 1;
+		AND o.voided <> 1
+		AND e.voided <> 1;
 	
-	DELETE exposed_infants FROM exposed_infants, patient_pcr_positif 
-	WHERE exposed_infants.patient_id = patient_pcr_positif.patient_id;
+	DELETE exposed_infants_day FROM exposed_infants_day, patient_pcr_positif 
+	WHERE exposed_infants_day.patient_id = patient_pcr_positif.patient_id;
 	
 	DROP table IF EXISTS patient_pcr_positif;
-	/*END for Delete patient from the exposed_infants whose have a Positive PCR*/
-	/*Delete from exposed_infants where patient has a HIV Positive TEST */
-	DELETE exposed_infants FROM exposed_infants,
+	/*END for Delete patient from the exposed_infants_day whose have a Positive PCR*/
+	/*Delete from exposed_infants_day where patient has a HIV Positive TEST */
+	DELETE exposed_infants_day FROM exposed_infants_day,
 	(SELECT pl.patient_id FROM patient_laboratory pl, patient p 
 	WHERE pl.patient_id = p.patient_id AND pl.test_id = 1040 
 	AND pl.test_done = 1 AND pl.test_result = 703 AND pl.voided <> 1
 	AND (TIMESTAMPDIFF(MONTH, p.birthdate,DATE(now())) >= 18)) C
-	WHERE exposed_infants.patient_id = C.patient_id;
+	WHERE exposed_infants_day.patient_id = C.patient_id;
 	
-	/*DELETE from exposed_infants where VIH positif - confirmé par test sérologique > 18 mois*/
-	DELETE exposed_infants FROM exposed_infants,
+	/*DELETE from exposed_infants_day where VIH positif - confirmé par test sérologique > 18 mois*/
+	DELETE exposed_infants_day FROM exposed_infants_day,
 	(select distinct ob.person_id from openmrs.obs ob, openmrs.encounter enc, openmrs.encounter_type ent
 	WHERE ob.encounter_id	=	enc.encounter_id
 	AND enc.encounter_type	=	ent.encounter_type_id
@@ -621,13 +643,13 @@ DELIMITER ;
 	AND ob.voided <> 1
 	AND (ent.uuid =	"349ae0b4-65c1-4122-aa06-480f186c8350"
 	OR ent.uuid = "33491314-c352-42d0-bd5d-a9d0bffc9bf1")) C
-	WHERE exposed_infants.patient_id = C.person_id;
+	WHERE exposed_infants_day.patient_id = C.person_id;
 						
 	/*	Condition 5 - Séroréversion doit être coché
 		Rapport d'arrêt du programme soins et traitement VIH/SIDA
 		condition_exposee = 5
 	*/
-	INSERT INTO exposed_infants(patient_id,location_id,encounter_id,visit_date,condition_exposee)
+	INSERT INTO exposed_infants_day(patient_id,location_id,encounter_id,visit_date,condition_exposee)
 					select distinct ob.person_id,ob.location_id,ob.encounter_id,
 					DATE(enc.encounter_datetime),5
 					from openmrs.obs ob, openmrs.encounter enc, 
@@ -974,8 +996,8 @@ INSERT INTO patient_status_arv_day(patient_id,id_status,start_date,encounter_id,
 		   WHERE psarv.patient_id=dreason.patient_id
 		   AND psarv.start_date <= dreason.visit_date;	
 	/*Delete Exposed infants from patient_arv_status*/
-	DELETE patient_status_arv_day FROM patient_status_arv_day,exposed_infants
-	WHERE patient_status_arv_day.patient_id = exposed_infants.patient_id;
+	DELETE patient_status_arv_day FROM patient_status_arv_day,exposed_infants_day
+	WHERE patient_status_arv_day.patient_id = exposed_infants_day.patient_id;
 	
    /*Update patient table for having the last patient arv status*/
    update patient p,patient_status_arv_day psa, 

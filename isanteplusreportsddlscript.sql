@@ -772,7 +772,20 @@ ALTER TABLE isanteplus.patient
 ADD COLUMN isante_id varchar(50) AFTER national_id;
 
 ALTER TABLE isanteplus.patient
-ADD COLUMN contact_name varchar(50) AFTER mother_name;
+ADD COLUMN contact_name text AFTER mother_name;
+/*Adding a column for the openmrs.obs.obs_id in the table patient_dispensing*/
+ALTER TABLE isanteplus.patient_dispensing
+ADD COLUMN obs_id int(11) AFTER location_id;
+
+ALTER TABLE isanteplus.patient_dispensing
+ADD COLUMN obs_group_id int(11) AFTER obs_id;
+
+/*Adding a column for the openmrs.obs.obs_id in the table patient_prescription*/
+ALTER TABLE isanteplus.patient_prescription
+ADD COLUMN obs_id int(11) AFTER location_id;
+
+ALTER TABLE isanteplus.patient_prescription
+ADD COLUMN obs_group_id int(11) AFTER obs_id;
 
 ALTER TABLE patient_status_arv DROP PRIMARY KEY;
 ALTER TABLE patient_status_arv ADD CONSTRAINT pk_patient_status_arv_new 

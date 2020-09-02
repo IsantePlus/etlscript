@@ -261,13 +261,16 @@ DELIMITER $$
 					 patient_id,
 					 encounter_id,
 					 location_id,
+					 obs_id,
+					 obs_group_id,
 					 drug_id,
 					 dispensation_date,
 					 last_updated_date,
 					 voided
 					)
 					select distinct ob.person_id,
-					ob.encounter_id,ob.location_id,ob.value_coded,ob2.obs_datetime, now(), ob.voided
+					ob.encounter_id,ob.location_id,ob.obs_id, ob.obs_group_id, 
+					ob.value_coded,ob2.obs_datetime, now(), ob.voided
 					from openmrs.obs ob, openmrs.obs ob1,openmrs.obs ob2
 					where ob.person_id=ob1.person_id
 					AND ob.encounter_id=ob1.encounter_id
@@ -277,6 +280,8 @@ DELIMITER $$
 					AND ob.concept_id=1282
 					AND ob2.concept_id IN(1444,159368,1443,1276)
 					ON DUPLICATE KEY UPDATE
+					obs_id = ob.obs_id,
+					obs_group_id = ob.obs_group_id,
 					dispensation_date = ob2.obs_datetime,
 					last_updated_date = now(),
 					voided = ob.voided;
@@ -358,12 +363,20 @@ DELIMITER $$
 		   SELECT DISTINCT pdisp.patient_id, pdisp.visit_id,MIN(DATE(pdisp.visit_date)),now()
 		   FROM patient_dispensing pdisp 
 		   WHERE pdisp.arv_drug = 1065
-		   AND pdisp.rx_or_prophy = 138405
+		   AND (pdisp.rx_or_prophy = 138405 OR pdisp.rx_or_prophy is null)
+		   AND pdisp.voided <> 1
 		   GROUP BY pdisp.patient_id
 			on duplicate key update
 			visit_id = visit_id,
 			visit_date = visit_date,
 			last_updated_date = now();
+			
+	/*DELETE all patients whose prescription form are modified, 
+	because the provider can put a patient on ART by mistake, and correct the error after */
+			/*DELETE FROM patient_on_arv WHERE patient_id NOT IN
+					(SELECT pdisp.patient_id FROM patient_dispensing pdisp
+					WHERE pdisp.arv_drug = 1065 AND (pdisp.rx_or_prophy = 138405 
+					OR pdisp.rx_or_prophy is null) AND pdisp.voided <> 1);*/
 		   
 		END$$
 DELIMITER ;
@@ -383,13 +396,15 @@ DELIMITER $$
 					 patient_id,
 					 encounter_id,
 					 location_id,
+					 obs_id,
+					 obs_group_id,
 					 drug_id,
 					 dispense,
 					 last_updated_date,
 					 voided
 					)
 					select distinct ob.person_id,
-					ob.encounter_id,ob.location_id,ob.value_coded,
+					ob.encounter_id,ob.location_id,ob.obs_id, ob.obs_group_id,ob.value_coded,
 					 IF(ob1.concept_id=163711, 1065, 1066), now(), ob.voided
 					from openmrs.obs ob, openmrs.obs ob1, openmrs.obs ob2
 					where ob.person_id=ob1.person_id
@@ -401,6 +416,8 @@ DELIMITER $$
 					AND ob2.concept_id IN(160742,1276,1444,159368,1443)
 					on duplicate key update
 					encounter_id = ob.encounter_id,
+					obs_id = ob.obs_id,
+					obs_group_id = ob.obs_group_id,
 					last_updated_date = now(),
 					voided = ob.voided;
 					
@@ -411,6 +428,8 @@ DELIMITER $$
 					 patient_id,
 					 encounter_id,
 					 location_id,
+					 obs_id,
+					 obs_group_id,
 					 drug_id,
 					 dispensation_date,
 					 dispense,
@@ -418,7 +437,8 @@ DELIMITER $$
 					 voided
 					)
 					select distinct ob.person_id,
-					ob.encounter_id,ob.location_id,ob.value_coded,DATE(ob2.obs_datetime), 1065, now(), ob.voided
+					ob.encounter_id,ob.location_id,ob.obs_id,ob.obs_group_id,
+					ob.value_coded,DATE(ob2.obs_datetime), 1065, now(), ob.voided
 					from openmrs.obs ob, openmrs.obs ob1,openmrs.obs ob2
 					where ob.person_id=ob1.person_id
 					AND ob.encounter_id=ob1.encounter_id
@@ -428,6 +448,8 @@ DELIMITER $$
 					AND ob.concept_id=1282
 					AND ob2.concept_id IN(1276,1444,159368,1443)
 					ON DUPLICATE KEY UPDATE
+					obs_id = ob.obs_id,
+					obs_group_id = ob.obs_group_id,
 					dispensation_date = ob2.obs_datetime,
 					dispense = 1065,
 					last_updated_date = now(),
