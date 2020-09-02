@@ -176,21 +176,23 @@ DROP TABLE IF EXISTS arv_status_loockup;
 	name_en varchar(50),
 	name_fr varchar(50),
 	definition longtext,
-	insertDate date);
+	insertDate date)
+	ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 	insert into arv_status_loockup values 
-	(1,'Death on ART','Décédés','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif de décès',date(now())),
-	(2,'Stopped','Arrêtés','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif d’arrêt de traitement',date(now())),
-	(3,'Transfert','Transférés','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif de transfert',date(now())),
+	(1,'Death on ART','Décédés sous ARV','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif de décès',date(now())),
+	(2,'Transfert','Transférés sous ARV','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif de transfert',date(now())),
+	(3,'Stopped','Arrêtés sous ARV','Tout patient mis sous ARV et ayant un rapport d’arrêt rempli pour motif d’arrêt de traitement',date(now())),
 	(4,'Died during the transition period','Décédé durant la période de transition',' Tout patient VIH+ non encore mis sous ARV ayant un rapport d’arrêt rempli pour cause de décès',date(now())),
 	(5,'Transferred during the transition period','Transféré durant la période de transition','Tout patient VIH+ non encore mis sous ARV ayant un rapport d’arrêt rempli pour cause de transfert',date(now())),
 	(6,'Regular','Réguliers (actifs sous ARV)','Tout patient mis sous ARV et n’ayant aucun rapport d’arrêt rempli pour motifs de décès, de transfert, ni d’arrêt de traitement. La date de prochain rendez-vous clinique ou de prochaine collecte de médicaments est située dans le futur de la période d’analyse. (Fiches à ne pas considérer, labo et counseling)',date(now())),
 	(7,'Recent during the transition period','Récent durant la période de transition','Tout patient VIH+ non encore mis sous ARV ayant eu sa première visite (clinique « 1re visite VIH» ) au cours des 12 derniers mois tout en excluant tout patient ayant un rapport d’arrêt avec motifs décédé ou transféré',date(now())),
-	(8,'Missing appointment','Rendez-vous ratés','Tout patient mis sous ARV et n’ayant aucun rapport d’arrêt rempli pour motifs de décès, de transfert, ni d’arrêt de traitement. La date de la période d’analyse est supérieure à la date de rendez-vous clinique ou de collecte de médicaments la plus récente sans excéder 30 jours',date(now())),
-	(9,'Lost to follow-up','Perdus de vue','Tout patient mis sous ARV et n’ayant aucun rapport d’arrêt rempli pour motifs de décès, de transfert, ni d’arrêt de traitement. La date de la période d’analyse est supérieure à la date de rendez-vous clinique ou de collecte de médicaments la plus récente de plus de 30 jours',date(now())),
+	(8,'Missing appointment','Rendez-vous ratés sous ARV','Tout patient mis sous ARV et n’ayant aucun rapport d’arrêt rempli pour motifs de décès, de transfert, ni d’arrêt de traitement. La date de la période d’analyse est supérieure à la date de rendez-vous clinique ou de collecte de médicaments la plus récente sans excéder 30 jours',date(now())),
+	(9,'Lost to follow-up','Perdus de vue sous ARV','Tout patient mis sous ARV et n’ayant aucun rapport d’arrêt rempli pour motifs de décès, de transfert, ni d’arrêt de traitement. La date de la période d’analyse est supérieure à la date de rendez-vous clinique ou de collecte de médicaments la plus récente de plus de 30 jours',date(now())),
 	(10,'Lost of follow up during the transition period','Perdu de vue durant la période de transition','Tout patient VIH+ non encore mis sous ARV n’ayant eu aucune visite (clinique « 1re visite VIH et suivi VIH uniquement », pharmacie, labo) au cours des 12 derniers mois et n’étant ni décédé ni transféré',date(now())),
 	(11,'Active during the transition period','Actif durant  la période de transition','Tout patient VIH+ non encore mis sous ARV et ayant eu une visite (clinique de suivi VIH uniquement, ou de pharmacie ou de labo) au cours des 12 derniers mois et n’étant ni décédé ni transféré',date(now())),
-	(12,'ongoing','En cours','La somme des patients sous ARV réguliers et ceux ayant raté leurs rendez-vous',date(now()));
+	(12,'Discontinued during the transition period','Arrêtés durant la période de transition','Tout patient arrêtés durant la période de transition',date(now())),
+	(13,'ongoing','En cours','La somme des patients sous ARV réguliers et ceux ayant raté leurs rendez-vous',date(now()));
  /*Table that contains all patients on ARV*/
 	DROP TABLE IF EXISTS patient_on_arv;
 	create table if not exists patient_on_arv(
@@ -216,7 +218,7 @@ Raison d'arrêt inconnue=1067
 	reason_name longtext,
 	last_updated_date DATETIME,
 	CONSTRAINT pk_dreason PRIMARY KEY (patient_id,visit_id,reason)
-	);
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*Create a table for raison arretés concept_id = 1667, 
 		answer_concept_id IN (1754,160415,115198,159737,5622)
 		That table allow us to delete from the table discontinuation_reason
@@ -306,21 +308,38 @@ CREATE TABLE IF NOT EXISTS patient_prescription (
 	DROP TABLE IF EXISTS alert_lookup;
 	CREATE TABLE IF NOT EXISTS alert_lookup(
 		id int primary key auto_increment,
+		message_fr text,
+		message_en text,
 		libelle text,
 		insert_date date
-	);
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 	/*table alert_lookup insertion*/
-	INSERT INTO alert_lookup(id,libelle,insert_date) VALUES 
-	(1,'Nombre de patient sous ARV depuis 6 mois sans un résultat de charge virale',DATE(now())),
-	(2,'Nombre de femmes enceintes, sous ARV depuis 4 mois sans un résultat de charge virale',DATE(now())),
-	(3,'Nombre de patients ayant leur dernière charge virale remontant à au moins 12 mois',DATE(now())),
-	(4,'Nombre de patients ayant leur dernière charge virale remontant à au moins 3 mois et dont le résultat était > 1000 copies/ml',DATE(now())),
-	(5,'Patient avec une dernière charge viral >1000 copies/ml',DATE(now())),
-	(6,'Tout patient dont la prochaine date de dispensation (next_disp) arrive dans les 30 
-	prochains jours par rapport à la date de consultation actuelle',DATE(now())),
-	(7,'Tout patient dont la prochaine date de dispensation (next_disp) se situe 
-	dans le passe par rapport à la date de consultation actuelle',DATE(now())),
-	(8,'Patients sous ARV depuis 5 mois sans un résultat de charge virale',DATE(now()));
+	INSERT INTO alert_lookup(id,libelle,message_fr,message_en,insert_date) VALUES 
+	(1,'Nombre de patient sous ARV depuis 6 mois sans un résultat de charge virale',
+	'Le patient est sous ARV depuis 6 mois sans un résultat de charge virale',
+	'Patients 6 months after ART initiation',DATE(now())),
+	(2,'Patients sous ARV depuis 5 mois sans un résultat de charge virale',
+	'Le patient sous  ARV depuis 5 mois sans un résultat de charge virale',
+	'Patients 5 months after ART initiation',DATE(now())),
+	(3,'Nombre de femmes enceintes, sous ARV depuis 4 mois sans un résultat de charge virale',
+	'La patiente est enceinte, sous ARV depuis 4 mois sans un résultat de charge virale',
+	'Pregnant woman 4 months after ART initiation',DATE(now())),
+	(4,'Nombre de patients ayant leur dernière charge virale remontant à au moins 12 mois',
+	'La dernière charge virale de ce patient remonte à au moins 12 mois',
+	'Patient whose last viral load test was performed 12 months prior',DATE(now())),
+	(5,'Nombre de patients ayant leur dernière charge virale remontant à au moins 3 mois et dont le résultat était > 1000 copies/ml',
+	'La dernière charge virale de ce patient remonte à au moins 3 mois et le résultat était > 1000 copies/ml',
+	'Patient  whose viral test result was greater than 1000 copies and was performed 3 months ago',DATE(now())),
+	(6,'Patient avec une dernière charge viral >1000 copies/ml',
+	'La dernière charge virale du patient est >1000 copies/ml','Patient with a VL test of >1000 copies',DATE(now())),
+	(7,'Tout patient dont la prochaine date de dispensation (next_disp) arrive dans les 30 
+	prochains jours par rapport à la date de consultation actuelle','Le patient doit venir renflouer ses ARV dans les 30 prochains jours',
+	'The patient must replenish his ARVs within the next 30 days',DATE(now())),
+	(8,'Tout patient dont la prochaine date de dispensation (next_disp) se situe 
+	dans le passe par rapport à la date de consultation actuelle',
+	'Le patient n a plus de médicaments disponibles','Patient no longer has medications available',DATE(now())),
+	(9,'Patient sous ARV et traitement anti tuberculeux',
+	'Patient sous ARV et traitement anti tuberculeux','Patient on ARV and anti-tuberculosis treatment',DATE(now()));
 	
 	
 	/*Create table alert*/
@@ -819,6 +838,42 @@ ADD COLUMN number_day_dispense INT(11) AFTER number_day;
 ALTER TABLE isanteplus.patient_prescription
 ADD COLUMN pills_amount_dispense INT(11) AFTER number_day_dispense;
 
+ALTER TABLE isanteplus.patient
+ADD COLUMN isante_id varchar(50) AFTER national_id;
+
+ALTER TABLE isanteplus.patient
+ADD COLUMN contact_name text AFTER mother_name;
+/*Adding a column for the openmrs.obs.obs_id in the table patient_dispensing*/
+ALTER TABLE isanteplus.patient_dispensing
+ADD COLUMN obs_id int(11) AFTER location_id;
+
+ALTER TABLE isanteplus.patient_dispensing
+ADD COLUMN obs_group_id int(11) AFTER obs_id;
+
+/*Adding a column for the openmrs.obs.obs_id in the table patient_prescription*/
+ALTER TABLE isanteplus.patient_prescription
+ADD COLUMN obs_id int(11) AFTER location_id;
+
+ALTER TABLE isanteplus.patient_prescription
+ADD COLUMN obs_group_id int(11) AFTER obs_id;
+
+ALTER TABLE patient_status_arv DROP PRIMARY KEY;
+ALTER TABLE patient_status_arv ADD CONSTRAINT pk_patient_status_arv_new 
+PRIMARY KEY (patient_id,id_status,start_date,date_started_status); 
+/*CREATE INDEX patient_id_index ON patient_status_arv(patient_id);
+CREATE INDEX id_status_index ON patient_status_arv(id_status);
+CREATE INDEX start_date_index ON patient_status_arv(start_date);
+CREATE INDEX date_started_status_index ON patient_status_arv(date_started_status);
+CREATE INDEX last_updated_date_index ON patient_status_arv(last_updated_date);
+*/
+DROP TABLE IF EXISTS openmrs.isanteplus_alert;
+		create table if not exists openmrs.isanteplus_alert(
+		patient_id int(11),
+		id_alert int(11),
+		visit_date date,
+		last_updated_date DATETIME,
+		CONSTRAINT pk_isanteplus_alert PRIMARY KEY (patient_id, id_alert)
+		);
 /* <Begin TB Treatment columns>*/
 
 ALTER TABLE  isanteplus.patient_tb_diagnosis 
