@@ -2577,31 +2577,27 @@ INSERT into virological_tests
 	 AND e.voided =0 ;
 	 
 	  
-   UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	 	 
-	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  isanteplus.patient_on_arv pat ,openmrs.encounter_type et , openmrs.encounter e
+   UPDATE isanteplus.patient_on_art pat	 	 
+	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  openmrs.encounter_type et , openmrs.encounter e
 	  WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	  AND et.encounter_type_id = e.encounter_type
 	  AND e.patient_id =pat.patient_id 
-	 )
-	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
-	 AND et.encounter_type_id = e.encounter_type
-	 AND e.patient_id =pat.patient_id 
-	 AND e.voided = 0;
+	  AND e.voided = 0
+	 ) ;
 	 
-	 UPDATE isanteplus.patient_on_art pat,openmrs.encounter_type et , openmrs.encounter e	
+	UPDATE isanteplus.patient_on_art pat	
 	 SET pat.second_last_folowup_vist_date = (SELECT MAX(e.encounter_datetime) 
-	 FROM  openmrs.encounter e ,openmrs.encounter_type et ,isanteplus.patient_on_arv pat  
+	 FROM  openmrs.encounter e ,openmrs.encounter_type et  
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND  e.patient_id =pat.patient_id
-	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) FROM openmrs.encounter_type et , openmrs.encounter e	,isanteplus.patient_on_arv pat
-	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND et.encounter_type_id = e.encounter_type
-	 AND e.patient_id =pat.patient_id 	 
-	 )	)
+	  AND e.voided = 0
+	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) FROM openmrs.encounter_type et , openmrs.encounter e	
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	 AND et.encounter_type_id = e.encounter_type
 	 AND e.patient_id =pat.patient_id 
-	 AND e.voided = 0;
+	  AND e.voided = 0	 
+	 )	) ;
 	  
 	 
 	 
@@ -2730,6 +2726,81 @@ INSERT into virological_tests
 	 AND o.concept_id = 1113
 	 AND o.voided = 0;
 	 
+	UPDATE isanteplus.patient_on_art pat , openmrs.encounter e, openmrs.encounter_type et 
+	SET pat.date_tested_hiv_postive = (SELECT MIN(e.encounter_datetime)  FROM openmrs.encounter e ,openmrs.encounter_type et WHERE e.encounter_type = et.encounter_type_id AND et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2','33491314-c352-42d0-bd5d-a9d0bffc9bf1', '17536ba6-dd7c-4f58-8014-08c7cb798ac7','349ae0b4-65c1-4122-aa06-480f186c8350') );
+	 
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o , openmrs.concept c
+	SET  pat.tb_genexpert_test = 1 ,
+	     pat.date_sample_sent_for_diagnositic_tb = DATE (o.obs_datetime),
+	     pat.tb_bacteriological_test_status = (CASE WHEN o.value_coded =1301 THEN 'POSTIVE' ELSE NULL END)
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  = c.concept_id
+	AND c.uuid = '4cbdc90a-e007-4a48-af54-5dd204edadd9'
+	AND o.voided = 0 ;
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.tb_crachat_test = 1 ,
+	     pat.date_sample_sent_for_diagnositic_tb = DATE (o.obs_datetime) ,
+	     pat.tb_bacteriological_test_status = (CASE WHEN o.value_coded IN (1362,1363,1364) THEN 'POSTIVE' ELSE NULL END)
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  = 307
+	AND o.voided = 0 ;
+	
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.tb_other_test = 1 ,
+	     pat.date_sample_sent_for_diagnositic_tb = DATE (o.obs_datetime) 
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  IN (159984 ,159982 )
+	AND o.voided = 0 ;
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.tb_bacteriological_test_status = 'POSTIVE'
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id = 159982 
+	AND o.value_coded IN (SELECT c.concept_id FROM openmrs.concept c WHERE  c.uuid IN ('36d6616b-8c7c-4768-9f38-2be4b704fccd', 'f4ee3bcc-947c-4390-9190-a335c2cd5868'))
+	AND o.voided = 0 ;
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.tb_bacteriological_test_status = 'POSTIVE'
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id = 159984 
+	AND o.value_coded IN (162204, 162203)
+	AND o.voided = 0 ;
+	
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o , openmrs.concept c
+	SET  pat.viral_load_targeted = 1 
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  = c.concept_id
+	AND c.uuid = '6b41328f-48bc-497c-8977-283feaa9cea6'
+	AND o.value_coded = (SELECT c.concept_id FROM openmrs.concept c WHERE  c.uuid ='5c4fb18a-70f1-4a0b-924c-0b595d7dbb90')
+	AND o.voided = 0 ;
+	
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.accepted_family_planning_method = (CASE WHEN o.value_coded =780 THEN 'PILLS'
+	                                                  WHEN o.value_coded =190  THEN 'CONDOM'
+																	  WHEN o.value_coded = 1359 THEN 'IMPLANTS'
+																	  WHEN o.value_coded = 5279 THEN 'INJECT'
+																	  WHEN o.value_coded = 163759 THEN 'NECKLACE' END) 																  
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  = 374
+	AND o.voided = 0 ;
+	
+	
+	UPDATE isanteplus.patient_on_art pat  
+      SET  pat.date_accepted_family_planning_method = (SELECT MIN(o.obs_datetime) FROM openmrs.obs o  WHERE pat.patient_id = o.person_id AND o.concept_id  = 374 	AND o.voided = 0 );	
+	 
+	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o 
+	SET  pat.using_family_planning_method = (CASE WHEN o.value_coded =780 THEN 'PILLS'
+	                                                  WHEN o.value_coded =190  THEN 'CONDOM'
+																	  WHEN o.value_coded = 1359 THEN 'IMPLANTS'
+																	  WHEN o.value_coded = 5279 THEN 'INJECT'
+																	  WHEN o.value_coded = 163759 THEN 'NECKLACE' END) ,
+        pat.date_using_family_planning_method = DATE (o.obs_datetime)																	  
+	WHERE pat.patient_id = o.person_id
+	AND o.concept_id  = 374
+	AND o.voided = 0 ;
 	-- COMMIT
 	
 	END$$
