@@ -1060,6 +1060,7 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    date_breast_feeding  DATETIME ,
    date_started_breast_feeding  DATETIME,
    date_full_6_months_of_inh_has_px DATETIME ,
+   migrated int(11) DEFAULT NULL,
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/
