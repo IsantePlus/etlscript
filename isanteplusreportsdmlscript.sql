@@ -2801,6 +2801,11 @@ INSERT into virological_tests
 	WHERE pat.patient_id = o.person_id
 	AND o.concept_id  = 374
 	AND o.voided = 0 ;
+	
+	UPDATE isanteplus.patient_on_art pat , openmrs.obs o  
+    SET pat.migrated = (CASE WHEN o.value_coded =160415 THEN 1 ELSE 0 END )
+    WHERE o.person_id = pat.patient_id
+    AND o.concept_id = 161555 ;
 	-- COMMIT
 	
 	END$$
