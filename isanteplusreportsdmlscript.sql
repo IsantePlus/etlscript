@@ -3004,12 +3004,12 @@ INSERT into virological_tests
 	DO
 	call calling_all_procedures();
 	
-	
-	DELIMITER $$
+	/*Adding patient_status_arv iSante to iSantePlus*/
+	/*DELIMITER $$
 	DROP PROCEDURE IF EXISTS isantepatientstatus$$
 	CREATE PROCEDURE isantepatientstatus()
 		BEGIN
-		/*Adding patient_status_arv iSante to iSantePlus*/
+		
 		INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
 		date_started_status)
 		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
@@ -3021,7 +3021,7 @@ INSERT into virological_tests
 		on duplicate key update
 		last_updated_date = values(last_updated_date);
 	END$$
-	DELIMITER ;
+	DELIMITER ;*/
 	
 	/*call isantepatientstatus();*/
 	
