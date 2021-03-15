@@ -364,6 +364,18 @@ DELIMITER $$
            AND ob3.concept_id=1282
            AND pdisp.drug_id=ob3.value_coded
            AND ob2.voided=0;
+	/*Update voided for drug removing*/
+	
+	UPDATE isanteplus.patient_dispensing pp, (select pap.obs_group_id, count(ob.obs_group_id) FROM openmrs.obs ob,
+				  isanteplus.patient_prescription pap
+				  WHERE pap.encounter_id = ob.encounter_id
+				  AND ob.obs_group_id = pap.obs_group_id
+				  AND ob.voided = 0
+				  GROUP BY 1
+				  HAVING count(ob.obs_group_id) <= 1) B
+	SET pp.voided = 1
+	WHERE pp.obs_group_id = B.obs_group_id
+	AND pp.voided <> 1;
 		   
 	/*INSERTION for patient on ARV*/
 		   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
@@ -554,6 +566,18 @@ DELIMITER $$
            AND ob3.concept_id = 1276
            AND pp.drug_id = ob2.value_coded
            AND ob3.voided = 0;
+		   
+		   
+	UPDATE isanteplus.patient_prescription pp, (select pap.obs_group_id, count(ob.obs_group_id) FROM openmrs.obs ob,
+				  isanteplus.patient_prescription pap
+				  WHERE pap.encounter_id = ob.encounter_id
+				  AND ob.obs_group_id = pap.obs_group_id
+				  AND ob.voided = 0
+				  GROUP BY 1
+				  HAVING count(ob.obs_group_id) <= 1) B
+	SET pp.voided = 1
+	WHERE pp.obs_group_id = B.obs_group_id
+	AND pp.voided <> 1;
 		   
 /*End of patient_prescription*/	
 

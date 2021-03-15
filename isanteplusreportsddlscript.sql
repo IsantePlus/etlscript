@@ -1032,7 +1032,7 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    date_started_arv DATETIME,
    date_started_receiving_arv DATETIME,
    receive_clinical_followup int(11) DEFAULT NULL,
-   treatment_regime_lines varchar(10) DEFAULT NULL,
+   treatment_regime_lines text DEFAULT NULL,
    date_started_regime_treatment DATETIME,
    lost_reason varchar(10) DEFAULT NULL,
    date_lost DATETIME,
