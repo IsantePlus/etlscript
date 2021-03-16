@@ -553,6 +553,13 @@ DELIMITER $$
 			DROP TABLE if exists pepfarTableTemp;
 			DROP TABLE if exists oneDrugRegimenPrefixTemp;
 			DROP TABLE if exists twoDrugRegimenPrefixTemp;
+			
+			DELETE pepfarTable FROM pepfarTable, patient_prescription
+			WHERE pepfarTable.patient_id = patient_prescription.patient_id
+			AND pepfarTable.location_id = patient_prescription.location_id
+			AND DATE(pepfarTable.visit_date) = DATE(patient_prescription.visit_date)
+			AND patient_prescription.voided = 1;
+			
 			/*Insertion regimen for one drug arv*/
 			create temporary table pepfarTableTemp
 			(location_id int(11),
