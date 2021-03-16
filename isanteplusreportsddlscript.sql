@@ -1032,7 +1032,7 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
    date_started_arv DATETIME,
    date_started_receiving_arv DATETIME,
    receive_clinical_followup int(11) DEFAULT NULL,
-   treatment_regime_lines varchar(10) DEFAULT NULL,
+   treatment_regime_lines text DEFAULT NULL,
    date_started_regime_treatment DATETIME,
    lost_reason varchar(10) DEFAULT NULL,
    date_lost DATETIME,
@@ -1064,3 +1064,45 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
 	constraint pk_patient_art PRIMARY KEY (patient_id));
 
 /* <end patient_art>*/
+ALTER TABLE patient_dispensing
+MODIFY COLUMN pills_amount double;
+
+ALTER TABLE patient_prescription 
+MODIFY COLUMN pills_amount_dispense double;
+
+/*For ART Report*/
+/* Adding new columns to the isanteplus tables */
+/*Adding viral_load_target_or_routine on the patient_laboratory table*/
+	ALTER TABLE isanteplus.patient_laboratory
+	ADD COLUMN viral_load_target_or_routine int(11) AFTER comment_test_done;
+	
+	/* Adding regimen line for each prescription */
+	ALTER TABLE isanteplus.patient_dispensing
+	ADD COLUMN treatment_regime_lines text AFTER rx_or_prophy;
+	
+	/*Create a table for key_populations */
+	DROP TABLE IF EXISTS key_populations;
+	create table if not exists key_populations(
+	patient_id int(11),
+	encounter_id int(11),
+	location_id int(11),
+	key_population int(11),
+	encounter_date datetime,
+	voided TINYINT(1) NOT NULL DEFAULT 0,
+	last_updated_date datetime,
+	CONSTRAINT pk_patient_key_population PRIMARY KEY (patient_id,encounter_id,key_population,voided)
+	);
+	
+	DROP TABLE IF EXISTS family_planning;
+	create table if not exists family_planning(
+	patient_id int(11),
+	encounter_id int(11),
+	location_id int(11),
+	planning int(11),
+	encounter_date datetime,
+	family_planning_method_name text,
+	accepting_or_using_fp int(11),
+	voided TINYINT(1) NOT NULL DEFAULT 0,
+	last_updated_date datetime,
+	CONSTRAINT pk_family_planning PRIMARY KEY (patient_id,encounter_id,planning,voided)
+	);

@@ -215,6 +215,13 @@ DELIMITER $$
 			WHERE p.patient_id = po.person_id;
 			
 			drop table patient_obs_temp;
+			
+			update patient p, openmrs.obs o
+			SET p.transferred_in = 1
+			WHERE p.patient_id = o.person_id
+			AND o.concept_id  = 159936
+			AND o.value_coded = 5622;
+			
 			/*End of DML queries*/
 		END$$
 DELIMITER ;
@@ -357,6 +364,18 @@ DELIMITER $$
            AND ob3.concept_id=1282
            AND pdisp.drug_id=ob3.value_coded
            AND ob2.voided=0;
+	/*Update voided for drug removing*/
+	
+	UPDATE isanteplus.patient_dispensing pp, (select pap.obs_group_id, count(ob.obs_group_id) FROM openmrs.obs ob,
+				  isanteplus.patient_prescription pap
+				  WHERE pap.encounter_id = ob.encounter_id
+				  AND ob.obs_group_id = pap.obs_group_id
+				  AND ob.voided = 0
+				  GROUP BY 1
+				  HAVING count(ob.obs_group_id) <= 1) B
+	SET pp.voided = 1
+	WHERE pp.obs_group_id = B.obs_group_id
+	AND pp.voided <> 1;
 		   
 	/*INSERTION for patient on ARV*/
 		   INSERT INTO patient_on_arv(patient_id,visit_id,visit_date, last_updated_date)
@@ -547,6 +566,18 @@ DELIMITER $$
            AND ob3.concept_id = 1276
            AND pp.drug_id = ob2.value_coded
            AND ob3.voided = 0;
+		   
+		   
+	UPDATE isanteplus.patient_prescription pp, (select pap.obs_group_id, count(ob.obs_group_id) FROM openmrs.obs ob,
+				  isanteplus.patient_prescription pap
+				  WHERE pap.encounter_id = ob.encounter_id
+				  AND ob.obs_group_id = pap.obs_group_id
+				  AND ob.voided = 0
+				  GROUP BY 1
+				  HAVING count(ob.obs_group_id) <= 1) B
+	SET pp.voided = 1
+	WHERE pp.obs_group_id = B.obs_group_id
+	AND pp.voided <> 1;
 		   
 /*End of patient_prescription*/	
 
@@ -2555,11 +2586,11 @@ INSERT into virological_tests
 	 AND o.value_coded=160152
 	 AND o.voided = 0;
 	
+	/*Starting insertion for patient_on_art table*/
 	INSERT INTO isanteplus.patient_on_art(patient_id)
 	SELECT DISTINCT
 	 pa.patient_id
 	 FROM isanteplus.patient_on_arv pa
-	 WHERE pa.voided = 0
 	 ON DUPLICATE KEY UPDATE 
 	 patient_id = pa.patient_id ;
 	 
@@ -2573,19 +2604,29 @@ INSERT into virological_tests
 	 SET par.first_vist_date = DATE(e.encounter_datetime) 
 	 WHERE  et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2' , '33491314-c352-42d0-bd5d-a9d0bffc9bf1' )	 
 	 AND et.encounter_type_id = e.encounter_type
-	 AND e.patient_id =par.patient_id 
-	 AND e.voided =0 ;
+	 AND e.patient_id = par.patient_id 
+	 AND e.voided = 0 ;
 	 
-	  
+	/*  
    UPDATE isanteplus.patient_on_art pat	 	 
 	 SET pat.last_folowup_vist_date = (SELECT MAX(e.encounter_datetime)  FROM  openmrs.encounter_type et , openmrs.encounter e
 	  WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
 	  AND et.encounter_type_id = e.encounter_type
 	  AND e.patient_id =pat.patient_id 
 	  AND e.voided = 0
-	 ) ;
+	 ) ; */
 	 
-	UPDATE isanteplus.patient_on_art pat	
+	  UPDATE isanteplus.patient_on_art pat,
+	  (SELECT e.patient_id, MAX(e.encounter_datetime) as encounter_datetime
+	  FROM  openmrs.encounter_type et , openmrs.encounter e
+	  WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7',
+	  '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	  AND et.encounter_type_id = e.encounter_type
+	  AND e.voided = 0 GROUP BY 1) B
+	 SET pat.last_folowup_vist_date = B.encounter_datetime 
+	 WHERE pat.patient_id = B.patient_id;
+	 
+	/* UPDATE isanteplus.patient_on_art pat	
 	 SET pat.second_last_folowup_vist_date = (SELECT MAX(e.encounter_datetime) 
 	 FROM  openmrs.encounter e ,openmrs.encounter_type et  
 	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
@@ -2597,8 +2638,22 @@ INSERT into virological_tests
 	 AND et.encounter_type_id = e.encounter_type
 	 AND e.patient_id =pat.patient_id 
 	  AND e.voided = 0	 
-	 )	) ;
+	 ) ) ; */
 	  
+	  UPDATE isanteplus.patient_on_art pat,
+	  (SELECT e.patient_id, MAX(e.encounter_datetime) as encounter_datetime
+	 FROM  openmrs.encounter e ,openmrs.encounter_type et  
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7',
+	 '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND et.encounter_type_id = e.encounter_type
+	  AND e.voided = 0
+	 AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime) 
+	 FROM openmrs.encounter_type et , openmrs.encounter e	
+	 WHERE et.uuid IN ('17536ba6-dd7c-4f58-8014-08c7cb798ac7' , '349ae0b4-65c1-4122-aa06-480f186c8350') 
+	 AND et.encounter_type_id = e.encounter_type 
+	  AND e.voided = 0) GROUP BY 1) B
+	 SET pat.second_last_folowup_vist_date = B.encounter_datetime
+	 WHERE pat.patient_id = B.patient_id;
 	 
 	 
 	  UPDATE isanteplus.patient_on_art pt, openmrs.obs o ,openmrs.concept c ,openmrs.encounter e	,openmrs.encounter_type etyp
@@ -2726,8 +2781,26 @@ INSERT into virological_tests
 	 AND o.concept_id = 1113
 	 AND o.voided = 0;
 	 
-	UPDATE isanteplus.patient_on_art pat , openmrs.encounter e, openmrs.encounter_type et 
-	SET pat.date_tested_hiv_postive = (SELECT MIN(e.encounter_datetime)  FROM openmrs.encounter e ,openmrs.encounter_type et WHERE e.encounter_type = et.encounter_type_id AND et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2','33491314-c352-42d0-bd5d-a9d0bffc9bf1', '17536ba6-dd7c-4f58-8014-08c7cb798ac7','349ae0b4-65c1-4122-aa06-480f186c8350') );
+	/*UPDATE isanteplus.patient_on_art pat , openmrs.encounter e, openmrs.encounter_type et 
+	SET pat.date_tested_hiv_postive = 
+	(SELECT MIN(e.encounter_datetime)  
+	FROM openmrs.encounter e ,openmrs.encounter_type et 
+	WHERE e.encounter_type = et.encounter_type_id 
+	AND et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2',
+					'33491314-c352-42d0-bd5d-a9d0bffc9bf1', 
+					'17536ba6-dd7c-4f58-8014-08c7cb798ac7',
+					'349ae0b4-65c1-4122-aa06-480f186c8350')); */
+					
+	UPDATE isanteplus.patient_on_art pat,
+	(SELECT e.patient_id, MIN(e.encounter_datetime) as min_encounter_date 
+	FROM openmrs.encounter e ,openmrs.encounter_type et 
+	WHERE e.encounter_type = et.encounter_type_id 
+	AND et.uuid IN ('204ad066-c5c2-4229-9a62-644bc5617ca2',
+					'33491314-c352-42d0-bd5d-a9d0bffc9bf1', 
+					'17536ba6-dd7c-4f58-8014-08c7cb798ac7',
+					'349ae0b4-65c1-4122-aa06-480f186c8350') GROUP BY 1) B 
+	SET pat.date_tested_hiv_postive = B.min_encounter_date
+	WHERE pat.patient_id = B.patient_id;
 	 
 	UPDATE isanteplus.patient_on_art pat  , openmrs.obs o , openmrs.concept c
 	SET  pat.tb_genexpert_test = 1 ,
@@ -2806,6 +2879,103 @@ INSERT into virological_tests
     SET pat.migrated = (CASE WHEN o.value_coded =160415 THEN 1 ELSE 0 END )
     WHERE o.person_id = pat.patient_id
     AND o.concept_id = 161555 ;
+	
+	/* Insertion for key_populations table */
+		INSERT into key_populations
+					(
+					 patient_id,
+					 encounter_id,
+					 location_id,
+					 key_population,
+					 encounter_date,
+					 voided,
+					 last_updated_date
+					)
+					select distinct o.person_id,o.encounter_id,
+					o.location_id,o.value_coded, o.value_datetime, o.voided, now()
+					from openmrs.obs o, openmrs.concept c
+					where o.concept_id = c.concept_id
+					AND c.uuid = 'b2726cc7-df4b-463c-919d-1c7a600fef87'
+					AND o.value_coded IS NOT NULL
+					on duplicate key update
+					voided = o.voided,
+					last_updated_date = now();
+					
+	/*Insertion for Planning Familial */
+					INSERT into family_planning
+					(
+					    patient_id,
+						encounter_id,
+						location_id,
+						planning,
+						encounter_date,
+						voided,
+						last_updated_date
+					)
+					select distinct o.person_id,o.encounter_id,
+					o.location_id,o.value_coded, o.obs_datetime, o.voided, now()
+					from openmrs.obs o
+					where o.concept_id = 374
+					AND o.value_coded IN (780,190, 1359, 5279, 163759)
+					AND o.voided = 0
+					on duplicate key update
+					voided = o.voided,
+					last_updated_date = now();
+					
+	/*Update for planning familial*/
+	UPDATE isanteplus.family_planning fp 
+	SET  fp.family_planning_method_name = (CASE WHEN fp.planning = 780 THEN 'PILLS'
+	                                             WHEN fp.planning = 190  THEN 'CONDOM'
+												WHEN fp.planning = 1359 THEN 'IMPLANTS'
+												WHEN fp.planning = 5279 THEN 'INJECT'
+											WHEN fp.planning = 163759 THEN 'NECKLACE' END) 																  
+	WHERE fp.planning IN (780,190, 1359, 5279, 163759)
+	AND fp.voided = 0;
+	/*Update for Accepting or using Family Planning : Accepting = 1, Using = 2*/
+	UPDATE isanteplus.family_planning fp, (SELECT fpl.patient_id, 
+											MIN(fpl.encounter_date) AS encounter_date
+										FROM family_planning fpl GROUP BY 1) B
+	SET fp.accepting_or_using_fp = 1
+	WHERE fp.patient_id = B.patient_id
+	AND DATE(fp.encounter_date) = DATE(B.encounter_date);
+	
+	UPDATE isanteplus.family_planning fp SET fp.accepting_or_using_fp = 2
+	WHERE fp.accepting_or_using_fp IS NULL;
+	
+	/* viral load routine = 1, viral load target = 2 */
+	
+	UPDATE isanteplus.patient_laboratory pl SET pl.viral_load_target_or_routine = 1
+	WHERE pl.test_id IN (856,1305)
+	AND (pl.viral_load_target_or_routine IS NULL OR pl.viral_load_target_or_routine <> 2);
+	
+	UPDATE isanteplus.patient_laboratory pl, openmrs.obs o, openmrs.concept c 
+	SET pl.viral_load_target_or_routine = 
+	CASE WHEN (c.uuid = "5c4fb18a-70f1-4a0b-924c-0b595d7dbb90") THEN 2
+	ELSE 1 END
+	WHERE pl.patient_id = o.person_id
+	AND pl.encounter_id = o.encounter_id
+	AND o.value_coded = c.concept_id
+	AND o.concept_id = (SELECT co.concept_id from openmrs.concept co 
+						where co.uuid = '6b41328f-48bc-497c-8977-283feaa9cea6')
+	AND c.uuid IN ("71e6fd5c-1544-4c9d-a452-32fdba8efc82","5c4fb18a-70f1-4a0b-924c-0b595d7dbb90")
+	AND pl.test_id IN (856,1305);
+	
+	/*Update for regimen First line, second line, third line*/
+	UPDATE isanteplus.patient_dispensing pdi, openmrs.obs o, openmrs.concept c
+	SET treatment_regime_lines = 
+		CASE WHEN (c.uuid = 'dd69cffe-d7b8-4cf1-bc11-3ac302763d48') THEN 'FIRST_LINE'
+		     WHEN (c.uuid = '77488a7b-957f-4ebc-892a-e53e7c910363')	THEN 'SECOND_LINE'
+			 WHEN (c.uuid = '99d88c3e-00ad-4122-a300-a88ff5c125c9')	THEN 'THIRD_LINE'
+			ELSE null END
+	WHERE pdi.patient_id = o.person_id
+	AND pdi.encounter_id = o.encounter_id
+	AND o.value_coded = c.concept_id
+	AND o.concept_id = 164432
+	AND c.uuid IN ('dd69cffe-d7b8-4cf1-bc11-3ac302763d48',
+					'77488a7b-957f-4ebc-892a-e53e7c910363',
+					'99d88c3e-00ad-4122-a300-a88ff5c125c9')
+	AND pdi.arv_drug = 1065;
+	
 	-- COMMIT
 	
 	END$$
@@ -2834,12 +3004,12 @@ INSERT into virological_tests
 	DO
 	call calling_all_procedures();
 	
-	
-	DELIMITER $$
+	/*Adding patient_status_arv iSante to iSantePlus*/
+	/*DELIMITER $$
 	DROP PROCEDURE IF EXISTS isantepatientstatus$$
 	CREATE PROCEDURE isantepatientstatus()
 		BEGIN
-		/*Adding patient_status_arv iSante to iSantePlus*/
+		
 		INSERT INTO patient_status_arv(patient_id,id_status,start_date,last_updated_date,
 		date_started_status)
 		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
@@ -2851,7 +3021,7 @@ INSERT into virological_tests
 		on duplicate key update
 		last_updated_date = values(last_updated_date);
 	END$$
-	DELIMITER ;
+	DELIMITER ;*/
 	
 	/*call isantepatientstatus();*/
 	
