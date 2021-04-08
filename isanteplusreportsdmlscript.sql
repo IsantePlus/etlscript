@@ -71,10 +71,32 @@ DELIMITER $$
 
 			/* update location_id for patients*/
 				update patient p,
-				(select distinct pid.patient_id,pid.location_id from openmrs.patient_identifier pid, openmrs.patient_identifier_type pidt WHERE pid.identifier_type=pidt.patient_identifier_type_id AND pidt.uuid="05a29f94-c0ed-11e2-94be-8c13b969e334") pi 
+				(select distinct pid.patient_id,pid.location_id 
+				from openmrs.patient_identifier pid, openmrs.patient_identifier_type pidt 
+				WHERE pid.identifier_type=pidt.patient_identifier_type_id 
+				AND pidt.uuid="05a29f94-c0ed-11e2-94be-8c13b969e334") pi 
 				set p.location_id=pi.location_id 
 				where p.patient_id=pi.patient_id
-                                 AND pi.location_id is not null;
+                AND pi.location_id is not null;
+			/*Adding iSante Site_code to the patient table*/
+			
+			DROP TABLE IF EXISTS location;
+			CREATE TABLE IF NOT EXISTS location(
+			 name text,
+			 location_id INT(11),
+			 isante_location_id INT(11),
+			 CONSTRAINT pk_reports_location PRIMARY KEY(location_id)
+			);
+
+			INSERT INTO location (name, location_id,isante_location_id)
+			SELECT distinct l.name, l.location_id,la.value_reference
+			FROM openmrs.location l, openmrs.location_attribute la, openmrs.location_attribute_type lat
+			WHERE l.location_id = la.location_id
+			AND la.attribute_type_id = lat.location_attribute_type_id
+			AND lat.uuid = "0e52924e-4ebb-40ba-9b83-b198b532653b";
+
+			update isanteplus.patient p, isanteplus.location l SET site_code = l.isante_location_id
+			WHERE p.location_id = l.location_id;
 			/*update patient with address*/	
 			update patient p, openmrs.person_address padd 
 			SET p.last_address=
@@ -520,11 +542,38 @@ DELIMITER $$
 		   WHERE pp.encounter_id=ob2.encounter_id
 		   AND ob1.obs_id=ob2.obs_group_id
            AND ob1.obs_id=ob3.obs_group_id
-		   AND (ob1.concept_id=1442 OR ob1.concept_id=163711)
+		   AND ob1.concept_id=1442
 		   AND ob2.concept_id=1444
            AND ob3.concept_id=1282
            AND pp.drug_id=ob3.value_coded
            AND ob2.voided = 0;
+		   
+	/*Update for posology_alt */
+	UPDATE isanteplus.patient_prescription pp, openmrs.obs ob1, openmrs.obs ob2, openmrs.obs ob3, 
+	openmrs.concept c
+		   SET pp.posology_alt = ob2.value_text
+		   WHERE pp.encounter_id = ob2.encounter_id
+		   AND ob1.obs_id = ob2.obs_group_id
+           AND ob1.obs_id = ob3.obs_group_id
+		   AND ob1.concept_id = 1442
+		   AND ob2.concept_id = c.concept_id
+           AND ob3.concept_id = 1282
+           AND pp.drug_id = ob3.value_coded
+           AND ob2.voided = 0
+		   AND c.uuid = 'ca8bc9c3-7f97-450a-8f33-e98f776b90e1';
+		   
+	/*update posology_alt_disp for table patient_prescription*/
+	UPDATE isanteplus.patient_prescription pp, openmrs.obs ob1, openmrs.obs ob2, openmrs.obs ob3
+		   SET pp.posology_alt_disp = ob2.value_text
+		   WHERE pp.encounter_id = ob2.encounter_id
+		   AND ob1.obs_id = ob2.obs_group_id
+           AND ob1.obs_id = ob3.obs_group_id
+		   AND ob1.concept_id = 163711
+		   AND ob2.concept_id = 1444
+           AND ob3.concept_id = 1282
+           AND pp.drug_id = ob3.value_coded
+           AND ob2.voided = 0;
+	
 	/*update number_day for table patient_prescription*/
 	UPDATE isanteplus.patient_prescription pp, openmrs.obs ob1, openmrs.obs ob2, openmrs.obs ob3
 		   SET pp.number_day=ob2.value_numeric

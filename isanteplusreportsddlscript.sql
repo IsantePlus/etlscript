@@ -1106,3 +1106,12 @@ MODIFY COLUMN pills_amount_dispense double;
 	last_updated_date datetime,
 	CONSTRAINT pk_family_planning PRIMARY KEY (patient_id,encounter_id,planning,voided)
 	);
+	
+	ALTER TABLE isanteplus.patient
+	ADD COLUMN site_code text AFTER location_id;
+	
+	ALTER TABLE isanteplus.patient_prescription
+	ADD COLUMN posology_alt text AFTER posology;
+	
+	ALTER TABLE isanteplus.patient_prescription
+	ADD COLUMN posology_alt_disp text AFTER posology_alt;
