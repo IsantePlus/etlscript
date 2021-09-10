@@ -350,7 +350,8 @@ CREATE TABLE IF NOT EXISTS patient_prescription (
 	id_alert int(11),
 	encounter_id int(11),
 	date_alert date,
-	last_updated_date DATETIME);
+	last_updated_date DATETIME)
+	ENGINE=InnoDB DEFAULT CHARSET=utf8;
 	
 	/*TABLE patient_diagnosis, this table contains all patient diagnosis*/	
 DROP TABLE IF EXISTS patient_diagnosis;
@@ -668,6 +669,9 @@ insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup
 insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(119,'3rd',74258,165085,159810,'DRV-DTG-ETV','3rd');
 insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(120,'1stReg',630,165085,'0','AZT-3TC-DTG','1stReg');
 insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(121,'1stReg',70056,78643,165085,'ABC-3TC-DTG','1stReg');
+insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(122,'1stReg127',70056,78643,154378,'ABC+3TC+RAL','1stReg127');
+insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(123,'1stReg128',630,154378,0,'AZT+3TC+RAL','1stReg128');
+insert into regimen(regID,regimenName,drugID1,drugID2,drugID3,shortName,regGroup) values(124,'1stReg129',86663,78643,154378,'AZT+3TC+RAL','1stReg129');
 
 CREATE TABLE IF NOT EXISTS `openmrs.isanteplus_patient_arv` (
   `patient_id` int(11) NOT NULL,
@@ -1115,3 +1119,86 @@ MODIFY COLUMN pills_amount_dispense double;
 	
 	ALTER TABLE isanteplus.patient_prescription
 	ADD COLUMN posology_alt_disp text AFTER posology_alt;
+	
+	DROP TABLE IF EXISTS isanteplus.patient_immunization;
+	CREATE TABLE IF NOT EXISTS isanteplus.patient_immunization (
+	  patient_id INT(11) NOT NULL,
+	  location_id INT(11) NOT NULL,
+	  encounter_id INT(11) NOT NULL,
+	  vaccine_obs_group_id INT(11),
+	  vaccine_concept_id INT(11) NOT NULL,
+	  dose double,
+	  vaccine_date datetime,
+	  encounter_date datetime,
+	  lot_number text,
+	  manufacturer text,
+	  vaccine_uuid varchar(255),
+	  voided TINYINT(1) NOT NULL DEFAULT 0,
+	  CONSTRAINT pk_patient_immunization PRIMARY KEY (patient_id,vaccine_obs_group_id,vaccine_concept_id)
+	) ENGINE=INNODB DEFAULT CHARSET=utf8;
+	
+	
+CREATE DATABASE IF NOT EXISTS tempNotif;
+
+GRANT ALL ON tempNotif.* TO 'solution_user'@'localhost' IDENTIFIED BY 'solution123';
+GRANT SELECT ON openmrs.* TO 'solution_user'@'localhost' IDENTIFIED BY 'solution123';
+GRANT SELECT ON isanteplus.* TO 'solution_user'@'localhost' IDENTIFIED BY 'solution123';
+
+DROP TABLE if exists immunization_lookup;
+CREATE TABLE if not exists immunization_lookup (
+  id INT(11) NOT NULL,
+  vaccine_concept_id INT(11),
+  vaccine_name text NOT NULL,
+  uuid char(38) NOT NULL,
+  register_date datetime,
+  PRIMARY KEY (uuid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+INSERT INTO immunization_lookup (id,vaccine_name,uuid,register_date)
+VALUES(1,'Hépatite B','782AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(2,'Polio (OPV/IPV)','783AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(3,'DiTePer','781AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(4,'HIB','5261AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(5,'Pentavalent','1423AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(6,'Pneumocoque','82215AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(7,'Rotavirus','83531AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(8,'ROR','159701AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(9,'RR','162586AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(10,'DT','17AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(11,'Varicelle','73193AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(12,'Typhimvi','86208AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(13,'Meningo AC','105030AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(14,'Hépatite A','77424AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(15,'Cholera','73354AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(16,'BCG','886AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(17,'HPV','159708AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(18,'Diphtérie/Tétanos','104528AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(19,'Oxford AstraZeneca','166156AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(20,'Moderna','166154AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(21,'Pfizer-BioNTech','166155AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(22,'Gamaleya-Sputnick V (Russia)','166157AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(23,'Sinovac(China)/Sinopharm(China)','166249AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now()),
+(24,'Johnson and Johnson (Janssen)','166355AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',now());
+
+UPDATE immunization_lookup iml, openmrs.concept c
+SET iml.vaccine_concept_id = c.concept_id
+WHERE iml.uuid = c.uuid;
+
+DROP TABLE if exists immunization_dose;
+CREATE TABLE if not exists immunization_dose (
+  patient_id int(11) NOT NULL,
+  vaccine_concept_id INT(11) NOT NULL,
+  dose0 datetime,
+  dose1 datetime,
+  dose2 datetime,
+  dose3 datetime,
+  dose4 datetime,
+  dose5 datetime,
+  dose6 datetime,
+  dose7 datetime,
+  dose8 datetime,
+  PRIMARY KEY (patient_id,vaccine_concept_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+ALTER TABLE isanteplus.patient_prescription 
+MODIFY COLUMN number_day double;

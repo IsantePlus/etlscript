@@ -998,6 +998,14 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 				AND o.concept_id = 1282
 				AND value_coded = 78280
 				AND et.uuid IN('10d73929-54b6-4d18-a647-8b7316bc1ae3', 'a9392241-109f-4d67-885b-57cc4b8c638f'));
+				
+	/*Alert DDP*/
+	INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert, last_updated_date)
+	SELECT distinct o.person_id,12,o.encounter_id,DATE(o.obs_datetime), now()
+	FROM openmrs.obs o, openmrs.concept c
+	WHERE o.concept_id = c.concept_id 
+	AND o.value_coded = 1065
+	AND c.uuid = 'c2aacdc8-156e-4527-8934-a8fb94162419';
 	
 	
 	END$$
@@ -1099,8 +1107,17 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 				'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
 				NULL,1,'2020-02-05 02:18:18',1,'2020-02-05 13:43:43',0,NULL,NULL,NULL,
 				'c26c358d-ec66-4588-8546-e39511723ded',2);
+				
+		/*Patient Abonne au DDP*/
+		INSERT INTO openmrs.patientflags_flag VALUES 
+		(11,'Ce patient est abonné au DDP',
+	'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 12',
+		'Ce patient est abonné au DDP',1,
+		'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
+	NULL,1,'2021-08-02 13:18:18',1,'2021-08-02 13:18:18',0,NULL,NULL,
+	NULL,'38125986-383c-4426-b825-87dc0effa6de',2);
 				 
-		INSERT INTO openmrs.patientflags_flag_tag VALUES (2,2),(4,2),(5,2),(7,2),(8,2),(9,2),(10,2);
+		INSERT INTO openmrs.patientflags_flag_tag VALUES (2,2),(4,2),(5,2),(7,2),(8,2),(9,2),(10,2),(11,2);
 		INSERT INTO openmrs.patientflags_tag_displaypoint VALUES (2,1);
 		
 		/*Update global_property to Set where the alert should appear*/			
@@ -1160,6 +1177,103 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 	
 	
 	DELIMITER $$
+	DROP PROCEDURE IF EXISTS isanteplus_patient_immunization$$
+	CREATE PROCEDURE isanteplus_patient_immunization()
+	BEGIN
+			
+		INSERT INTO isanteplus.patient_immunization(patient_id,location_id,encounter_id,vaccine_obs_group_id,
+		vaccine_concept_id,encounter_date,vaccine_uuid,voided)
+		select o.person_id, o.location_id,o.encounter_id,o.obs_group_id,o.value_coded,
+		o.obs_datetime,c.uuid,o.voided
+		from openmrs.obs ob, openmrs.obs o, openmrs.concept c
+		WHERE ob.obs_id = o.obs_group_id
+		AND o.value_coded = c.concept_id
+		AND o.concept_id = 984
+		AND ob.concept_id = 1421
+		ON DUPLICATE KEY UPDATE
+		voided = o.voided;
+		
+		SET SQL_SAFE_UPDATES = 0;
+		
+		UPDATE isanteplus.patient_immunization pim, openmrs.obs o 
+		SET pim.dose = o.value_numeric
+		WHERE pim.vaccine_obs_group_id = o.obs_group_id
+		AND o.concept_id = 1418;
+		
+		UPDATE isanteplus.patient_immunization pim, openmrs.obs o 
+		SET pim.vaccine_date = o.value_datetime
+		WHERE pim.vaccine_obs_group_id = o.obs_group_id
+		AND o.concept_id = 1410;
+		
+		/*Vaccine Dose*/
+	TRUNCATE TABLE immunization_dose;
+		INSERT INTO immunization_dose (patient_id,vaccine_concept_id)
+SELECT DISTINCT pati.patient_id,pati.vaccine_concept_id
+ FROM patient_immunization pati WHERE pati.voided <> 1
+ ON DUPLICATE KEY UPDATE
+ vaccine_concept_id = pati.vaccine_concept_id;
+/*dose0*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose0 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 0 AND voided <> 1;
+/*dose1*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose1 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 1 AND voided <> 1;
+/*dose2*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose2 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 2 AND voided <> 1;
+/*dose3*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose3 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 3 AND voided <> 1;
+/*dose4*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose4 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 4 AND voided <> 1;
+/*dose5*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose5 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 5 AND voided <> 1;
+/*dose6*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose6 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 6 AND voided <> 1;
+/*dose7*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose7 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 7 AND voided <> 1;
+/*dose8*/
+UPDATE immunization_dose idose,patient_immunization pati
+SET idose.dose8 = pati.vaccine_date
+WHERE idose.patient_id = pati.patient_id
+AND idose.vaccine_concept_id = pati.vaccine_concept_id
+AND CONVERT(pati.dose, SIGNED INTEGER) = 8 AND voided <> 1;
+		
+		
+		SET SQL_SAFE_UPDATES = 1;
+			
+	END$$
+	DELIMITER ;
+	
+	DELIMITER $$
 		DROP PROCEDURE IF EXISTS calling_arv_status_and_regimen$$
 		CREATE PROCEDURE calling_arv_status_and_regimen()
 		BEGIN
@@ -1175,6 +1289,7 @@ INSERT INTO traitement_tuberculeux (patient_id,id_alert,encounter_id,drug_id, vi
 		BEGIN
 			call isanteplus_patient_alert();
 			call alert_viral_load();
+			call isanteplus_patient_immunization();
 		END$$
 	DELIMITER ;
   
