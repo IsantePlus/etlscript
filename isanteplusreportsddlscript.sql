@@ -993,6 +993,21 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
 	encounter_id INT(11) NOT NULL,
 	encounter_type_id INT(11) NOT NULL,
 	muac INT(11),
+	pregnant INT(1),
+	next_visit_date DATE,
+	edd DATE,
+	birth_plan INT(1),
+	high_risk INT(1),
+	gestation_greater_than_12_wks INT(1),
+	iron_supplement INT(1),
+	folic_acid_supplement INT(1),
+	tetanus_toxoid_vaccine INT(1),
+	iron_defiency_anemia INT(1),
+	prescribed_iron INT(1),
+	prescribed_folic_acid INT(1),
+	elevated_blood_pressure INT(1),
+	toxemia_signs INT(1),
+	over_20_weeks_pregnancy INT(1),
 	last_updated_date DATETIME,
 	voided TINYINT(1),
 	PRIMARY KEY (`encounter_id`,location_id),
@@ -1001,6 +1016,7 @@ CREATE TABLE IF NOT EXISTS patient_ob_gyn (
 	INDEX(encounter_id),
 	INDEX(patient_id)
 );
+
 /* <end ob/gyn>*/
 
 	/*Create table for art reort*/
