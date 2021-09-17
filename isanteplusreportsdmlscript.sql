@@ -1,5 +1,33 @@
 USE isanteplus;
 
+GRANT SELECT ON isanteplus.* TO 'openmrs_user'@'localhost';
+
+DELIMITER $$
+	DROP PROCEDURE IF EXISTS isanteplus.set_scheduler_and_lock_wait_variable$$
+	CREATE PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable()
+	BEGIN
+			SET GLOBAL event_scheduler = 1;
+			SET innodb_lock_wait_timeout = 250;
+    
+    END$$
+	DELIMITER ;
+
+GRANT EXECUTE ON PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable TO 'openmrs_user'@'localhost';
+
+CALL isanteplus.set_scheduler_and_lock_wait_variable();
+
+DELIMITER $$
+	DROP PROCEDURE IF EXISTS isanteplus.set_scheduler_and_lock_wait_variable$$
+	CREATE PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable()
+	BEGIN
+			SET GLOBAL event_scheduler = 1 ;
+			SET innodb_lock_wait_timeout = 250;
+    
+    END$$
+	DELIMITER ;
+
+GRANT EXECUTE ON PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable TO 'openmrs_user'@'localhost';
+
 DELIMITER $$
 	DROP PROCEDURE IF EXISTS isanteplusreports_patient_dml$$
 	CREATE PROCEDURE isanteplusreports_patient_dml()
@@ -84,9 +112,9 @@ DELIMITER $$
 			CREATE TABLE IF NOT EXISTS location(
 			 name text,
 			 location_id INT(11),
-			 isante_location_id INT(11),
+			 isante_location_id text,
 			 CONSTRAINT pk_reports_location PRIMARY KEY(location_id)
-			);
+			)ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 			INSERT INTO location (name, location_id,isante_location_id)
 			SELECT distinct l.name, l.location_id,la.value_reference
@@ -102,7 +130,7 @@ DELIMITER $$
 			SET p.last_address=
             CASE WHEN ((padd.address1 <> '' AND padd.address1 is not null) 
             AND (padd.address2 <> '' AND padd.address2 is not null))
-              THEN CONCAT(padd.address1,' ',padd.address2)
+              THEN CONCAT(padd.address1,' ',padd.address2) 
             WHEN ((padd.address1 <> '' AND padd.address1 is not null) 
             AND (padd.address2 = '' OR padd.address2 is null))
                THEN padd.address1
@@ -1594,6 +1622,7 @@ SELECT v.patient_id,v.visit_id,
 	AND etype.uuid='9d0113c6-f23a-4461-8428-7e9a7344f2ba'
 	AND ob.concept_id=161555
 	AND ob.voided = 0
+	AND enc.voided <> 1
 	GROUP BY v.patient_id, ob.value_coded;
 	
 	/*INSERT for stopping_reason*/
@@ -2039,8 +2068,9 @@ INSERT into patient_diagnosis
 		   AND ob.concept_id = 159394
 		   AND ob.value_coded IN (159392,159393)
 		   AND ob.voided = 0;
+	/*Update for primary_secondary area*/
 	update patient_diagnosis pdiag, openmrs.obs ob
-	 SET pdiag.suspected_confirmed = ob.value_coded
+	 SET pdiag.primary_secondary = ob.value_coded
 	 WHERE pdiag.patient_id = ob.person_id
 		   AND pdiag.obs_group_id = ob.obs_group_id
 		   AND pdiag.encounter_id = ob.encounter_id
