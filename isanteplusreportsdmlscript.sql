@@ -14,6 +14,8 @@ DELIMITER $$
 
 GRANT EXECUTE ON PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable TO 'openmrs_user'@'localhost';
 
+CALL isanteplus.set_scheduler_and_lock_wait_variable();
+
 DELIMITER $$
 	DROP PROCEDURE IF EXISTS isanteplus.set_scheduler_and_lock_wait_variable$$
 	CREATE PROCEDURE isanteplus.set_scheduler_and_lock_wait_variable()
