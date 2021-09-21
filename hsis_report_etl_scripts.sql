@@ -58,7 +58,7 @@ CREATE TABLE if not exists vists_distribution (
 	
 	DROP EVENT if exists hsis_report_event;
 	CREATE EVENT if not exists hsis_report_event
-	ON SCHEDULE EVERY 1 MINUTE
+	ON SCHEDULE EVERY 10 MINUTE
 	 STARTS now()
 	  DO
 		call call_all_hsis_report_procedures();  
