@@ -1,8 +1,8 @@
 
--- SET GLOBAL event_scheduler = 1;
--- DROP DATABASE if exists isanteplus; 
--- create database if not exists isanteplus;
--- ALTER DATABASE isanteplus CHARACTER SET utf8 COLLATE utf8_general_ci;  
+/*SET GLOBAL event_scheduler = 1;
+DROP DATABASE if exists isanteplus; 
+create database if not exists isanteplus;
+ALTER DATABASE isanteplus CHARACTER SET utf8 COLLATE utf8_general_ci;  */
 
 /*.......... DDL SCRIPTS ............*/
 /*create distribution of Vists dataset table */
@@ -19,11 +19,14 @@ CREATE TABLE if not exists vists_distribution (
 
 DROP TABLE IF EXISTS lab_examination;
 CREATE TABLE if not exists lab_examination (
-  concept_id INT(11) NOT NULL AUTO_INCREMENT,
+  exam_id INT(11) NOT NULL AUTO_INCREMENT,
   patient_id INT(11) NOT NULL,
+  concept_id INT(11) NOT NULL DEFAULT '0',
+  lab_date DATETIME,
   value_coded int(11),
-  PRIMARY KEY (concept_id) ,
-  CONSTRAINT patient_xs_1 FOREIGN KEY(patient_id) REFERENCES openmrs.patient(patient_id)) ;
+  PRIMARY KEY (exam_id) ,
+  CONSTRAINT lab_date_zk UNIQUE (patient_id ,lab_date),
+  CONSTRAINT patient_hj_1 FOREIGN KEY(patient_id) REFERENCES openmrs.patient(patient_id)) ;
 
 
 
@@ -54,63 +57,15 @@ CREATE TABLE if not exists lab_examination (
 	 WHERE ivd.patient_id = ov.patient_id  
 	 AND ivd.vist_date = ov.date_started;	
     
-	/* Query for Malaria microscopic test where coded answer is positive*/
-	INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded)
-	               SELECT p.patient_id , o.concept_id , o.value_coded
+	INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded,lab_date)
+	               SELECT p.patient_id , o.concept_id , o.value_coded , o.obs_datetime
 				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE concept_id=32 
-				   AND value_coded=703 
+				    WHERE value_coded = 703 OR value_coded = 1138 
 				      ON DUPLICATE KEY UPDATE
 					   patient_id = p.patient_id ,
 					   concept_id = o.concept_id ,
-					   value_coded = o.value_coded;
-
-    /* Query for Malaria microscopic test where coded answer is negative*/
-	INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded)
-	               SELECT p.patient_id , o.concept_id , o.value_coded
-				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE concept_id=1643 
-				   AND value_coded=703
-				      ON DUPLICATE KEY UPDATE
-					   patient_id = p.patient_id ,
-					   concept_id = o.concept_id ,
-					   value_coded = o.value_coded;
-
-    /* Query for Malaria microscopic test where answer is undetermined*/
-    INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded)
-	               SELECT p.patient_id , o.concept_id , o.value_coded
-				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE concept_id=32 
-				   AND value_coded=1138
-				      ON DUPLICATE KEY UPDATE
-					   patient_id = p.patient_id ,
-					   concept_id = o.concept_id ,
-					   value_coded = o.value_coded;
-
-     /* Query for Malaria fast test where answer is undetermined*/
-     INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded)
-	               SELECT p.patient_id , o.concept_id , o.value_coded
-				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE concept_id=1643
-				   AND value_coded=1138
-				      ON DUPLICATE KEY UPDATE
-					   patient_id = p.patient_id ,
-					   concept_id = o.concept_id;
-					   value_coded = o.value_coded;
-
-     /* Query for the number of people tested for malaria both Malaria fast test and Malaria microscopic test
-	  where answer is undetermined*/
-	 SELECT COUNT(p.patient_id)
-				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE o.concept_id IN (32,1643)
-				   AND o.value_coded=1138
-
-	/* Query for the number of people tested for malaria both Malaria fast test and Malaria microscopic test
-	  where answer is positive*/
-	 SELECT COUNT(p.patient_id)
-				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
-				   WHERE o.concept_id IN (32,1643)
-				   AND o.value_coded=703			   
+					   value_coded = o.value_coded ,
+					   lab_date = o.obs_datetime ;
 						   
   END$$
 	DELIMITER ;  
