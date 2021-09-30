@@ -17,6 +17,19 @@ CREATE TABLE if not exists vists_distribution (
   CONSTRAINT vist_date_uk UNIQUE (patient_id ,vist_date),
   CONSTRAINT patient_hs_1 FOREIGN KEY(patient_id) REFERENCES openmrs.patient(patient_id)) ;
 
+DROP TABLE IF EXISTS lab_examination;
+CREATE TABLE if not exists lab_examination (
+  exam_id INT(11) NOT NULL AUTO_INCREMENT,
+  patient_id INT(11) NOT NULL,
+  concept_id INT(11) NOT NULL DEFAULT '0',
+  lab_date DATETIME,
+  value_coded int(11),
+  PRIMARY KEY (exam_id) ,
+  CONSTRAINT lab_date_zk UNIQUE (patient_id ,lab_date),
+  CONSTRAINT patient_hj_1 FOREIGN KEY(patient_id) REFERENCES openmrs.patient(patient_id)) ;
+
+
+
 
   /*.......... DML SCRIPTS ............*/
   	DELIMITER $$
@@ -43,6 +56,16 @@ CREATE TABLE if not exists vists_distribution (
 							END ) 
 	 WHERE ivd.patient_id = ov.patient_id  
 	 AND ivd.vist_date = ov.date_started;	
+    
+	INSERT into isanteplus.lab_examination(patient_id,concept_id,value_coded,lab_date)
+	               SELECT p.patient_id , o.concept_id , o.value_coded , o.obs_datetime
+				   FROM openmrs.patient p INNER JOIN openmrs.obs o ON p.patient_id = o.person_id 
+				    WHERE value_coded = 703 OR value_coded = 1138 
+				      ON DUPLICATE KEY UPDATE
+					   patient_id = p.patient_id ,
+					   concept_id = o.concept_id ,
+					   value_coded = o.value_coded ,
+					   lab_date = o.obs_datetime ;
 						   
   END$$
 	DELIMITER ;  
