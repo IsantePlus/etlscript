@@ -10,7 +10,12 @@ How to execute the ETL script for the reports
 
         ./load.sh root Admin123 localhost 3306 
 
- Note: Ensure you have mysql client installed locally       
+ Note: Ensure you have mysql client installed locally  .
+
+ There are cases where running the report would give error like `user denied acces to table ...`
+ run the command below as root user 
+
+        GRANT ALL PRIVILEGES ON *.* TO 'mysqluser'@'%' IDENTIFIED BY 'mysqlpw';     
 
 
 
