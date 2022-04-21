@@ -1,9 +1,10 @@
-
-DELIMITER $$
+/* commented this out because Table itech.patientStatusTemp is not created any where 
+also see isanteplusreportsdmlscript.sql */
+/*DELIMITER $$
 	DROP PROCEDURE IF EXISTS isanteplus.isantepatientstatus$$
 	CREATE PROCEDURE isanteplus.isantepatientstatus()
-		BEGIN
-		/*Adding patient_status_arv iSante to iSantePlus*/
+		BEGIN 
+		Adding patient_status_arv iSante to iSantePlus
 		INSERT INTO isanteplus.patient_status_arv(patient_id,id_status,start_date,last_updated_date,
 		date_started_status)
 		SELECT p.patient_id, pst.patientStatus as id_status, pst.insertDate
@@ -16,6 +17,6 @@ DELIMITER $$
 		on duplicate key update
 		last_updated_date = values(last_updated_date);
 	END$$
-	DELIMITER ;
+	DELIMITER ;*/
 	
-	call isanteplus.isantepatientstatus();
+	/*call isanteplus.isantepatientstatus();*/
