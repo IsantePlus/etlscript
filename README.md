@@ -12,7 +12,7 @@ How to execute the ETL script for the reports
 
  Note: Ensure you have mysql client installed locally  .
 
- There are cases where running the report would give error like `user denied acces to table ...`
+ There are cases where running the report would give error ie `SELECT command denied to user 'mysqluser'@'172.28.0.3' for table 'patient'`
  run the command below as root user 
 
         GRANT ALL PRIVILEGES ON *.* TO 'mysqluser'@'%' IDENTIFIED BY 'mysqlpw';     
