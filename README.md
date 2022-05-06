@@ -13,7 +13,7 @@ Note: Ensure you have mysql client installed locally
         ./load.sh root pdebezium localhost 3306 
 
 
- There are cases where running the report would give error ie    
+ In case the openmrs database user is not `openmrs_user` ie mysqluser, running the report would give error ie    
  `SELECT command denied to user 'mysqluser'@'172.28.0.3' for table 'patient'`
 
  login mysql as root user 
