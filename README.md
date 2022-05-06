@@ -10,7 +10,7 @@ Note: Ensure you have mysql client installed locally
 
 `./load.sh <mysql_user> <mysql_password> mysql_host> <mysql_port>` ie
 
-        ./load.sh root pdebezium localhost 3306 
+        ./load.sh root debezium localhost 3306 
 
 
  In case the openmrs database user is not `openmrs_user` ie mysqluser, running the report would give error ie    
