@@ -214,6 +214,23 @@ DROP TABLE IF EXISTS isanteplus.report_type;
 	INSERT INTO isanteplus.indicator_type (indicator_type_id,report_type_id,indicator_name_fr,
 	indicator_name_en,indicator_type_description,date_created)
 	VALUES(37,1,'Violences (physique, sexuelle)','Violence (physical, sexual) ','Violences (physique, sexuelle)', now());
+	
+	/*Covid suspect 155762*/
+	INSERT INTO isanteplus.indicator_type (indicator_type_id,report_type_id,indicator_name_fr,
+	indicator_name_en,indicator_type_description,date_created)
+	VALUES(38,1,'Covid suspect','Covid suspect','Covid suspect', now());
+	
+	/*Covid confirmé*/
+	INSERT INTO isanteplus.indicator_type (indicator_type_id,report_type_id,indicator_name_fr,
+	indicator_name_en,indicator_type_description,date_created)
+	VALUES(39,1,'Covid confirmé','Covid confirmé','Confirm Covid', now());
+	
+	/*Cancer du Col*/
+	
+	INSERT INTO isanteplus.indicator_type (indicator_type_id,report_type_id,indicator_name_fr,
+	indicator_name_en,indicator_type_description,date_created)
+	VALUES(40,1,'Cancer du Col','Cancer du Col','Cancer of Col', now());
+	
  
  DELIMITER $$
 	DROP PROCEDURE IF EXISTS patient_diagnosis$$
@@ -273,8 +290,9 @@ INSERT into patient_diagnosis
 	/*Update encounter date for patient_diagnosis*/	   
 	update patient_diagnosis pdiag, openmrs.encounter enc
     SET pdiag.encounter_date = DATE(enc.encounter_datetime)
-    WHERE pdiag.location_id = enc.location_id
-          AND pdiag.encounter_id = enc.encounter_id
+    WHERE /*pdiag.location_id = enc.location_id
+          AND*/ pdiag.encounter_id = enc.encounter_id
+		  AND enc.encounter_datetime IS NOT NULL
 		  AND enc.voided = 0;
 /*Ending patient_diagnosis*/
  END$$
@@ -294,6 +312,7 @@ DELIMITER ;
 	AND pdiag.answer_concept_id = 160146
 	AND pdiag.suspected_confirmed = 159393
 	AND pdiag.voided <> 1
+	AND pdiag.encounter_date IS NOT NULL
 	ON DUPLICATE KEY UPDATE
 	last_updated_date = NOW(),
 	voided = pdiag.voided;
@@ -398,7 +417,7 @@ DELIMITER ;
 		voided = pdiag.voided;
 	
 	/*9 : Paludisme confirme*/
-	INSERT INTO isanteplus.indicators (indicator_id,indicator_type_id,patient_id,location_id,encounter_id,
+	/*INSERT INTO isanteplus.indicators (indicator_id,indicator_type_id,patient_id,location_id,encounter_id,
 										indicator_date,voided,created_date,last_updated_date)
 	SELECT 9,9,pdiag.patient_id, pdiag.location_id, pdiag.encounter_id, pdiag.encounter_date,
 	pdiag.voided, now(), now() FROM isanteplus.patient p, isanteplus.patient_diagnosis pdiag
@@ -409,7 +428,7 @@ DELIMITER ;
 	AND pdiag.voided <> 1
 	ON DUPLICATE KEY UPDATE
 	last_updated_date = NOW(),
-	voided = pdiag.voided;
+	voided = pdiag.voided;*/
 	
 	/*10 : Paralysie flasque aigue(pfa)*/
 	
@@ -784,6 +803,51 @@ DELIMITER ;
 	ON DUPLICATE KEY UPDATE
 	last_updated_date = NOW(),
 	voided = pdiag.voided;
+	
+	/* 38: Covid Suspect - 155762 */
+	
+	INSERT INTO isanteplus.indicators (indicator_id,indicator_type_id,patient_id,location_id,encounter_id,
+										indicator_date,voided,created_date,last_updated_date)
+	SELECT 38,38,pdiag.patient_id, pdiag.location_id, pdiag.encounter_id, pdiag.encounter_date,
+	pdiag.voided, now(), now() FROM isanteplus.patient p, isanteplus.patient_diagnosis pdiag
+	WHERE p.patient_id = pdiag.patient_id
+	AND pdiag.concept_id = 1284
+	AND pdiag.answer_concept_id = 155762
+	AND pdiag.suspected_confirmed = 159393
+	AND pdiag.voided <> 1
+	ON DUPLICATE KEY UPDATE
+	last_updated_date = NOW(),
+	voided = pdiag.voided;
+	
+	/* 39: Covid Confirme - 155762 */
+	
+	INSERT INTO isanteplus.indicators (indicator_id,indicator_type_id,patient_id,location_id,encounter_id,
+										indicator_date,voided,created_date,last_updated_date)
+	SELECT 39,39,pdiag.patient_id, pdiag.location_id, pdiag.encounter_id, pdiag.encounter_date,
+	pdiag.voided, now(), now() FROM isanteplus.patient p, isanteplus.patient_diagnosis pdiag
+	WHERE p.patient_id = pdiag.patient_id
+	AND pdiag.concept_id = 1284
+	AND pdiag.answer_concept_id = 155762
+	AND pdiag.suspected_confirmed = 159392
+	AND pdiag.voided <> 1
+	ON DUPLICATE KEY UPDATE
+	last_updated_date = NOW(),
+	voided = pdiag.voided;
+	
+	/*CANCER DU COL*/
+	
+	INSERT INTO isanteplus.indicators (indicator_id,indicator_type_id,patient_id,location_id,encounter_id,
+										indicator_date,voided,created_date,last_updated_date)
+	SELECT 40,40,pdiag.patient_id, pdiag.location_id, pdiag.encounter_id, pdiag.encounter_date,
+	pdiag.voided, now(), now() FROM isanteplus.patient p, isanteplus.patient_diagnosis pdiag
+	WHERE p.patient_id = pdiag.patient_id
+	AND pdiag.concept_id = 1284
+	AND pdiag.answer_concept_id = 116023
+	AND pdiag.voided <> 1
+	ON DUPLICATE KEY UPDATE
+	last_updated_date = NOW(),
+	voided = pdiag.voided;
+	
   END$$
 DELIMITER ;
 

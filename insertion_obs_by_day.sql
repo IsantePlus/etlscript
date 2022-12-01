@@ -406,17 +406,21 @@ CREATE TABLE IF NOT EXISTS patient_prescription_day (
 	AND en.visit_id=vi.visit_id
 	AND vi.voided = 0;
 	/*update test_done,date_test_done,comment_test_done for patient_laboratory*/
-	update patient_laboratory plab,isanteplus.obs_by_day ob
-	SET plab.test_done=1,plab.test_result=CASE WHEN ob.value_coded<>''
+	UPDATE patient_laboratory plab,openmrs.obs ob
+	SET plab.test_done=1,
+		plab.test_result=CASE WHEN ob.value_coded IS NOT NULL
 	   THEN ob.value_coded
-	   WHEN ob.value_numeric<>'' THEN ob.value_numeric
-	   WHEN ob.value_text<>'' THEN ob.value_text
+	   WHEN ob.value_numeric IS NOT NULL 
+	   THEN ob.value_numeric
+	   WHEN ob.value_text IS NOT NULL THEN ob.value_text
 	   END,
 	plab.date_test_done=ob.obs_datetime,
 	plab.comment_test_done=ob.comments
 	WHERE plab.test_id=ob.concept_id
 	AND plab.encounter_id=ob.encounter_id
-	AND ob.voided = 0;
+	AND ob.voided = 0
+	AND (ob.value_coded IS NOT NULL OR ob.value_numeric IS NOT NULL
+	OR ob.value_text IS NOT NULL);
 
 /*End of patient_laboratory*/
 	END$$
