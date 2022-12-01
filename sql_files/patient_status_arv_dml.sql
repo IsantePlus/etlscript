@@ -1287,8 +1287,8 @@ AND CONVERT(pati.dose, SIGNED INTEGER) = 8 AND voided <> 1;
 		DROP PROCEDURE IF EXISTS calling_patient_alert$$
 		CREATE PROCEDURE calling_patient_alert()
 		BEGIN
-			call isanteplus_patient_alert();
 			call alert_viral_load();
+			call isanteplus_patient_alert();
 			call isanteplus_patient_immunization();
 		END$$
 	DELIMITER ;

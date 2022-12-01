@@ -837,10 +837,10 @@ ALTER TABLE isanteplus.patient_prescription
 ADD COLUMN dispensation_date DATE AFTER drug_id;
 
 ALTER TABLE isanteplus.patient_prescription
-ADD COLUMN number_day_dispense INT(11) AFTER number_day;
+ADD COLUMN number_day_dispense DOUBLE AFTER number_day;
 
 ALTER TABLE isanteplus.patient_prescription
-ADD COLUMN pills_amount_dispense INT(11) AFTER number_day_dispense;
+ADD COLUMN pills_amount_dispense DOUBLE AFTER number_day_dispense;
 
 ALTER TABLE isanteplus.patient
 ADD COLUMN isante_id varchar(50) AFTER national_id;
@@ -1218,3 +1218,20 @@ CREATE TABLE if not exists immunization_dose (
 
 ALTER TABLE isanteplus.patient_prescription 
 MODIFY COLUMN number_day double;
+
+ALTER TABLE isanteplus.patient
+ADD COLUMN date_transferred_in DATETIME AFTER transferred_in;
+
+ALTER TABLE isanteplus.patient
+ADD COLUMN date_started_arv_other_site DATETIME 
+AFTER date_transferred_in;
+/*Field modify on 17_12_2021*/
+ALTER TABLE isanteplus.patient_on_art 
+MODIFY COLUMN cervical_cancer_treatment TEXT;
+/*Field added on 19 janv 2022*/
+ALTER TABLE isanteplus.patient_dispensing
+ADD COLUMN ddp int(11) default 0 AFTER dispensation_location;
+
+ALTER TABLE patient_dispensing
+MODIFY COLUMN dose_day double;
+

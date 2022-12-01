@@ -76,26 +76,30 @@ DELIMITER $$
 			openmrs.patient_identifier_type pit set p.st_id=pi.identifier 
 			where p.patient_id=pi.patient_id 
 			AND pi.identifier_type=pit.patient_identifier_type_id
-			and pit.uuid="d059f6d0-9e42-4760-8de1-8316b48bc5f1";
+			and pit.uuid="d059f6d0-9e42-4760-8de1-8316b48bc5f1"
+			AND pi.voided <> 1;
             /*National ID*/
 			update patient p,openmrs.patient_identifier pi, 
 			openmrs.patient_identifier_type pit set p.national_id=pi.identifier 
 			where p.patient_id=pi.patient_id 
 			AND pi.identifier_type=pit.patient_identifier_type_id
-			and pit.uuid="9fb4533d-4fd5-4276-875b-2ab41597f5dd";
+			and pit.uuid="9fb4533d-4fd5-4276-875b-2ab41597f5dd"
+			AND pi.voided <> 1;
 			/*iSantePlus_ID*/
 			update patient p,openmrs.patient_identifier pi, 
 			openmrs.patient_identifier_type pit set p.identifier=pi.identifier 
 			where p.patient_id=pi.patient_id 
 			AND pi.identifier_type=pit.patient_identifier_type_id
-			and pit.uuid="05a29f94-c0ed-11e2-94be-8c13b969e334";
+			and pit.uuid="05a29f94-c0ed-11e2-94be-8c13b969e334"
+			AND pi.voided <> 1;
 			
 			/*isante_id*/
 			update patient p,openmrs.patient_identifier pi, 
 			openmrs.patient_identifier_type pit set p.isante_id = pi.identifier 
 			where p.patient_id=pi.patient_id 
 			AND pi.identifier_type=pit.patient_identifier_type_id
-			and pit.uuid="0e0c7cc2-3491-4675-b705-746e372ff346";
+			and pit.uuid="0e0c7cc2-3491-4675-b705-746e372ff346"
+			AND pi.voided <> 1;
 
 			/* update location_id for patients*/
 				update patient p,
@@ -121,7 +125,9 @@ DELIMITER $$
 			FROM openmrs.location l, openmrs.location_attribute la, openmrs.location_attribute_type lat
 			WHERE l.location_id = la.location_id
 			AND la.attribute_type_id = lat.location_attribute_type_id
-			AND lat.uuid = "0e52924e-4ebb-40ba-9b83-b198b532653b";
+			AND lat.uuid = "0e52924e-4ebb-40ba-9b83-b198b532653b"
+			ON DUPLICATE KEY UPDATE
+			name=l.name;
 
 			update isanteplus.patient p, isanteplus.location l SET site_code = l.isante_location_id
 			WHERE p.location_id = l.location_id;
@@ -190,7 +196,7 @@ DELIMITER $$
             AND ob.concept_id = 165210
             AND (o.value_text is not null AND o.value_text <> '');
 			
-			/* update patient with vih status */
+			/* update patient with vih_status when patient has a HIV form*/
 			
 			UPDATE patient p, openmrs.encounter en, openmrs.encounter_type ent
 			SET p.vih_status=1
@@ -200,6 +206,18 @@ DELIMITER $$
 			 OR ent.uuid='349ae0b4-65c1-4122-aa06-480f186c8350'
 			 OR ent.uuid='33491314-c352-42d0-bd5d-a9d0bffc9bf1')
 			AND en.voided = 0;
+			/*Update vih_status WHEN patient has a laboratory form WITH
+			   HIV test positive*/
+			UPDATE patient p, openmrs.encounter en, openmrs.encounter_type ent, openmrs.obs o
+			SET p.vih_status=1
+			WHERE p.patient_id = en.patient_id AND en.encounter_type = ent.encounter_type_id
+            AND en.encounter_id = o.encounter_id
+            AND en.patient_id = o.person_id
+			AND ent.uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
+            AND o.concept_id IN (1040,1042)
+            AND o.value_coded = 703
+			AND en.voided <> 1
+            ANd o.voided <> 1;
 			/*Update for vih_status = 1 where the patient has a labs test hiv positive*/
 			/*UPDATE patient p, openmrs.encounter en, openmrs.obs ob
 			SET p.vih_status=1
@@ -271,6 +289,21 @@ DELIMITER $$
 			WHERE p.patient_id = o.person_id
 			AND o.concept_id  = 159936
 			AND o.value_coded = 5622;
+			
+			/*Date des premiers soins dans cet établissement*/
+			update patient p, openmrs.obs o, openmrs.concept c
+			SET p.date_transferred_in = o.value_datetime
+			WHERE p.patient_id = o.person_id
+			AND o.concept_id = c.concept_id
+			AND c.uuid = 'd9885523-a923-474b-88df-f3294d422c3c'
+			AND o.value_datetime IS NOT NULL;
+			
+			/*Date début des ARV dans l’établissement de référence*/
+			update patient p, openmrs.obs o
+			SET p.date_started_arv_other_site = o.value_datetime
+			WHERE p.patient_id = o.person_id
+			AND o.concept_id  = 159599
+			AND o.value_datetime IS NOT NULL;
 			
 			/*End of DML queries*/
 		END$$
@@ -395,7 +428,16 @@ DELIMITER $$
 	WHERE patdisp.encounter_id=ob.encounter_id
 	AND ob.concept_id=1755
 	AND ob.value_coded=1065
-	AND ob.voided = 0;	
+	AND ob.voided = 0;
+	/*UPDATE ddp field for patient on DDP, ddp=1065 for patient on DDP
+	 and ddp = 0 for patient not on DDP*/
+	UPDATE patient_dispensing patdisp, openmrs.obs ob, openmrs.concept c 
+	SET patdisp.ddp = 1065
+	WHERE patdisp.encounter_id = ob.encounter_id
+	AND ob.concept_id = c.concept_id
+	AND c.uuid = 'c2aacdc8-156e-4527-8934-a8fb94162419'
+	AND ob.value_coded = 1065
+	AND ob.voided = 0; 
 	/* Update on patient_dispensing where the drug is a ARV drug */
 	UPDATE patient_dispensing pdis, (SELECT ad.drug_id FROM arv_drugs ad) B
 		   SET pdis.arv_drug = 1065
@@ -851,16 +893,20 @@ DELIMITER $$
 	AND vi.voided = 0;
 	/*update test_done,date_test_done,comment_test_done for patient_laboratory*/
 	UPDATE patient_laboratory plab,openmrs.obs ob
-	SET plab.test_done=1,plab.test_result=CASE WHEN ob.value_coded IS NULL
+	SET plab.test_done=1,
+		plab.test_result=CASE WHEN ob.value_coded IS NOT NULL
 	   THEN ob.value_coded
-	   WHEN ob.value_numeric<>'' THEN ob.value_numeric
-	   WHEN ob.value_text<>'' THEN ob.value_text
+	   WHEN ob.value_numeric IS NOT NULL 
+	   THEN ob.value_numeric
+	   WHEN ob.value_text IS NOT NULL THEN ob.value_text
 	   END,
 	plab.date_test_done=ob.obs_datetime,
 	plab.comment_test_done=ob.comments
 	WHERE plab.test_id=ob.concept_id
 	AND plab.encounter_id=ob.encounter_id
-	AND ob.voided = 0;
+	AND ob.voided = 0
+	AND (ob.value_coded IS NOT NULL OR ob.value_numeric IS NOT NULL
+	OR ob.value_text IS NOT NULL);
 
 	/*update order_destination for patient_laboratory*/
 	UPDATE patient_laboratory plab,openmrs.obs ob

@@ -54,7 +54,7 @@ LOCK TABLES `druglookup` WRITE;
 INSERT INTO `druglookup` VALUES 
 (1,1,70056,NULL,'abacavir','Abacavir (ABC)','NRTIs','300mg BID','ABC','Abacavir (ABC)','Abacavir (ABC)','300mg caplet','20mg/ml liquid','300mg comprim&#xe9;','20mg/ml sirop','qd'),
 (2,2,70245,NULL,'acyclovir','Acyclovir','Other Treatments',NULL,'','Acyclovir','Acyclovir',NULL,NULL,NULL,NULL,NULL),
-(3,3,NULL, NULL,'amprenavir','Amprenavir (AMP)','Pls','1200mg BID','AMP','Amprenavir (AMP)','Amprenavir (AMP)',NULL,NULL,NULL,NULL,NULL),
+(3,3,71193, NULL,'amprenavir','Amprenavir (AMP)','Pls','1200mg BID','AMP','Amprenavir (AMP)','Amprenavir (AMP)',NULL,NULL,NULL,NULL,NULL),
 (4,4,NULL,NULL,'amprenavirPlusBostRtv','Amprenavir+BostRTV','Pls','1200mg/200mg qd','AMP+BostRTV','Amprenavir+BostRTV','Amprenavir+BostRTV',NULL,NULL,NULL,NULL,NULL),
 (5,5,71647,NUll,'atazanavir','Atazanavir (ATZN)','Pls','400mg qd','ATZN','Atazanavir (ATZN)','Atazanavir (ATZN)','150 mg qd',NULL,'150 mg qd',NULL,NULL),
 (6,6,159809,NULL,'atazanavirPlusBostRtv','Atazanavir+BostRTV','Pls','300mg/100mg qd','ATZN+BostRTV','Atazanavir+BostRTV','Atazanavir+BostRTV',NULL,NULL,NULL,NULL,NULL),
