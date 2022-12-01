@@ -10,3 +10,4 @@ mysql --protocol=tcp -h ${host} -P ${port} -u ${user} -p${pass} < ./sql_files/ru
 mysql --protocol=tcp -h ${host} -P ${port} -u ${user} -p${pass} < ./sql_files/insertion_obs_by_day.sql
 mysql --protocol=tcp -h ${host} -P ${port} -u ${user} -p${pass} < ./sql_files/patient_status_arv_dml.sql
 mysql --protocol=tcp -h ${host} -P ${port} -u ${user} -p${pass} < ./sql_files/indicators_report.sql
+mysql --protocol=tcp -h ${host} -P ${port} -u ${user} -p${pass} < ./sql_files/psychoSocialResume.sql
