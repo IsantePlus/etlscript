@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Test Data Generator for iSantePlus ETL Stored Procedures
+Test Data Generator for iSantePlus ETL Script
 
-Generates synthetic test data for the patient_status_arv and alert_viral_load
-stored procedures. Creates data for both openmrs.* and isanteplus.* schemas.
+Generates synthetic test data for the patient_status_arv_dml.sql ETL script,
+covering patient status ARV, regimen DML, alerts 1-12, and immunizations.
+Creates data for both openmrs.* and isanteplus.* schemas.
 
 Usage:
     # Direct database insert:
@@ -62,6 +63,9 @@ ENCOUNTER_TYPES = {
     'followup': '204ad066-c5c2-4229-9a62-644bc5617ca2',
     'dispensing1': '10d73929-54b6-4d18-a647-8b7316bc1ae3',
     'dispensing2': 'a9392241-109f-4d67-885b-57cc4b8c638f',
+    # Non-standard type for exercising status 10 (lost pre-ARV) which filters
+    # on encounter types NOT IN the 7 standard clinical types above
+    'adherence_counseling': 'e8a2b0c1-7d6f-4a3e-9b5c-2f1d8e7a6b4c',
 }
 
 # Concept UUIDs for specific lookups
@@ -120,9 +124,57 @@ class ConceptID(IntEnum):
     IMMUNIZATION_SEQUENCE = 1418
     IMMUNIZATION_DATE = 1410
 
+    # ARV Drug IDs (for regimen matching in pepfarTable)
+    DRUG_ZDV = 86663
+    DRUG_3TC = 78643
+    DRUG_EFV = 75523
+    DRUG_NVP = 80586
+    DRUG_D4T = 84309
+    DRUG_ABC = 70056
+    DRUG_TDF = 84795
+    DRUG_FTC = 75628
+    DRUG_LPV_R = 794
+    DRUG_DTG = 165085
+    DRUG_DRV_R = 74258
+    DRUG_ATV_R = 159809
+    DRUG_COMBIVIR = 630  # Fixed-dose combination AZT+3TC
+
 
 # Discontinuation reasons for tmp_discontinued_patients
 DISCONTINUATION_REASONS = [ConceptID.DECEASED, ConceptID.DISCONTINUATION_SUB, ConceptID.TRANSFERRED]
+
+# Vaccine concept IDs and names for immunization obs groups.
+# These IDs must exist in the openmrs.concept table because the immunization
+# SQL joins on o.value_coded = c.concept_id to get vaccine UUIDs.
+VACCINE_CONCEPTS = [
+    (886, 'BCG'),
+    (783, 'Polio'),
+    (781, 'DTP'),
+    (782, 'HepB'),
+    (5261, 'HIB'),
+    (1423, 'Pentavalent'),
+    (159701, 'MMR'),
+    (162586, 'Measles/Rubella'),
+]
+
+# ARV regimen definitions: (drugID1, drugID2, drugID3, shortname).
+# The regimen DML section progressively matches 1, 2, or 3 drugs prescribed
+# at the same visit to these entries. drugID2=0 means a 2-drug fixed-dose
+# combo; drugID3=0 means only 2 drugs need to match.
+REGIMEN_DEFINITIONS = [
+    # 3-drug combinations (most common)
+    (ConceptID.DRUG_TDF, ConceptID.DRUG_3TC, ConceptID.DRUG_EFV, 'TDF-3TC-EFV'),
+    (ConceptID.DRUG_TDF, ConceptID.DRUG_FTC, ConceptID.DRUG_DTG, 'TDF-FTC-DTG'),
+    (ConceptID.DRUG_ZDV, ConceptID.DRUG_3TC, ConceptID.DRUG_NVP, 'AZT-3TC-NVP'),
+    (ConceptID.DRUG_ABC, ConceptID.DRUG_3TC, ConceptID.DRUG_DTG, 'ABC-3TC-DTG'),
+    (ConceptID.DRUG_TDF, ConceptID.DRUG_3TC, ConceptID.DRUG_DTG, 'TDF-3TC-DTG'),
+    (ConceptID.DRUG_ZDV, ConceptID.DRUG_3TC, ConceptID.DRUG_EFV, 'AZT-3TC-EFV'),
+    (ConceptID.DRUG_ABC, ConceptID.DRUG_3TC, ConceptID.DRUG_LPV_R, 'ABC-3TC-LPV/r'),
+    (ConceptID.DRUG_TDF, ConceptID.DRUG_FTC, ConceptID.DRUG_DRV_R, 'TDF-FTC-DRV/r'),
+    # 2-drug fixed-dose combinations (drugID3=0)
+    (ConceptID.DRUG_COMBIVIR, ConceptID.DRUG_EFV, 0, 'AZT+3TC+EFV'),
+    (ConceptID.DRUG_COMBIVIR, ConceptID.DRUG_NVP, 0, 'AZT+3TC+NVP'),
+]
 
 
 # =============================================================================
@@ -176,6 +228,9 @@ class Patient:
     location_id: int
     visits: List['Visit'] = field(default_factory=list)
     first_visit_date: Optional[datetime] = None
+    # When True, only generates non-standard encounter types (adherence_counseling)
+    # and limits visits to 1. Used for status 10 (lost pre-ARV) seed patients.
+    force_nonstandard_encounters: bool = False
     person_uuid: str = field(default_factory=_generate_uuid)
 
     @property
@@ -279,6 +334,8 @@ class TestDataGenerator:
         self.patient_on_arv: List[int] = []
         self.discontinuation_reasons: List[Dict] = []
         self.patient_pregnancy: List[Dict] = []
+        self.patient_prescription: List[Dict] = []
+        self.regimen_definitions: List[Dict] = []
 
     def _random_date(self, start: datetime, end: datetime) -> datetime:
         """Generate a random datetime between start and end."""
@@ -309,7 +366,12 @@ class TestDataGenerator:
         return enc_types
 
     def _setup_concepts(self) -> List[Dict]:
-        """Create concept records for UUID lookups."""
+        """Create concept records for UUID lookups and vaccine references.
+
+        The UUID-lookup concepts (isoniazid_group, rifampicin_group, ddp) get
+        auto-generated IDs. Vaccine concepts use their real concept IDs because
+        the immunization SQL joins on o.value_coded = c.concept_id.
+        """
         concepts = []
         for name, uid in CONCEPT_UUIDS.items():
             concept_id = self.id_gen.next('concept')
@@ -318,6 +380,15 @@ class TestDataGenerator:
                 'concept_id': concept_id,
                 'uuid': uid,
             })
+
+        # Vaccine concepts need their real IDs (not auto-generated) because
+        # the immunization SQL joins obs.value_coded to concept.concept_id
+        for concept_id, _name in VACCINE_CONCEPTS:
+            concepts.append({
+                'concept_id': concept_id,
+                'uuid': _generate_uuid(),
+            })
+
         return concepts
 
     def _generate_patient(self) -> Patient:
@@ -391,7 +462,11 @@ class TestDataGenerator:
         visits = []
 
         # Number of visits based on how long they've been in care
-        if patient.date_started_arv:
+        if patient.force_nonstandard_encounters:
+            # Status 10 seed patients need their latest visit to stay >12 months
+            # old, so limit to a single visit
+            num_visits = 1
+        elif patient.date_started_arv:
             months_in_care = (datetime.now() - patient.date_started_arv).days // 30
             num_visits = min(months_in_care + 1, random.randint(2, 24))
         else:
@@ -428,29 +503,41 @@ class TestDataGenerator:
         # Determine which encounter types to create
         encounter_types_to_create = []
 
-        # First visit or follow-up
-        if is_first_visit:
-            if patient.is_pediatric:
-                encounter_types_to_create.append('pediatric')
-            else:
-                encounter_types_to_create.append('first_visit')
+        if patient.force_nonstandard_encounters:
+            # Only non-standard encounters for status 10 seed patients
+            encounter_types_to_create.append('adherence_counseling')
         else:
-            if patient.is_pediatric:
-                encounter_types_to_create.append('pediatric_followup')
+            # First visit or follow-up
+            if is_first_visit:
+                if patient.is_pediatric:
+                    encounter_types_to_create.append('pediatric')
+                else:
+                    encounter_types_to_create.append('first_visit')
             else:
-                encounter_types_to_create.append('followup')
+                if patient.is_pediatric:
+                    encounter_types_to_create.append('pediatric_followup')
+                else:
+                    encounter_types_to_create.append('followup')
 
-        # Add dispensing encounter if on ARV
-        if patient.is_on_arv:
-            encounter_types_to_create.append(random.choice(['dispensing1', 'dispensing2']))
+            # Add dispensing encounter if on ARV
+            if patient.is_on_arv:
+                encounter_types_to_create.append(random.choice(['dispensing1', 'dispensing2']))
 
-        # Add lab encounter sometimes
-        if random.random() < 0.3:
-            encounter_types_to_create.append('lab')
+            # Add lab encounter sometimes
+            if random.random() < 0.3:
+                encounter_types_to_create.append('lab')
 
-        # Add discontinuation encounter if discontinued
-        if patient.is_discontinued and random.random() < 0.5:
-            encounter_types_to_create.append('discontinuation')
+            # Add discontinuation encounter if discontinued
+            if patient.is_discontinued and random.random() < 0.5:
+                encounter_types_to_create.append('discontinuation')
+
+            # Adherence counseling for some HIV+ non-ARV patients, enabling
+            # the status 10 (lost pre-ARV) code path for random patients
+            if (patient.is_hiv_positive
+                    and not patient.is_on_arv
+                    and not patient.is_discontinued
+                    and random.random() < 0.15):
+                encounter_types_to_create.append('adherence_counseling')
 
         for enc_type in encounter_types_to_create:
             enc = Encounter(
@@ -475,7 +562,8 @@ class TestDataGenerator:
         observations = []
 
         def add_obs(concept_id: int, value_coded: int = None,
-                   value_numeric: float = None, obs_group_id: int = None) -> Observation:
+                   value_numeric: float = None, obs_group_id: int = None,
+                   value_datetime: datetime = None) -> Observation:
             obs = Observation(
                 obs_id=self.id_gen.next('obs'),
                 person_id=patient.patient_id,
@@ -483,6 +571,7 @@ class TestDataGenerator:
                 concept_id=concept_id,
                 value_coded=value_coded,
                 value_numeric=value_numeric,
+                value_datetime=value_datetime,
                 obs_datetime=encounter.encounter_datetime,
                 obs_group_id=obs_group_id,
                 location_id=encounter.location_id,
@@ -570,6 +659,36 @@ class TestDataGenerator:
         # DDP subscription
         if random.random() < 0.02:
             add_obs(self.concept_ids.get('ddp', 99997), value_coded=ConceptID.ARV_DRUG)
+
+        # Immunization obs groups for pediatric encounters.
+        # Creates parent obs (concept 1421) with 3 child obs linked via
+        # obs_group_id: vaccine type (984), dose number (1418), date (1410).
+        if enc_type_name in ('pediatric', 'pediatric_followup'):
+            if patient.is_pediatric and random.random() < 0.6:
+                num_vaccines = random.randint(1, 2)
+                vaccines = random.sample(
+                    VACCINE_CONCEPTS, min(num_vaccines, len(VACCINE_CONCEPTS))
+                )
+                for vaccine_id, _vaccine_name in vaccines:
+                    dose_number = random.randint(0, 3)
+                    vaccine_date = encounter.encounter_datetime - timedelta(
+                        days=random.randint(0, 30)
+                    )
+
+                    # Parent obs: immunization history construct
+                    parent_obs = add_obs(ConceptID.IMMUNIZATION_GROUP)
+                    # Child: which vaccine was given
+                    add_obs(ConceptID.IMMUNIZATION_GIVEN,
+                            value_coded=vaccine_id,
+                            obs_group_id=parent_obs.obs_id)
+                    # Child: dose sequence number
+                    add_obs(ConceptID.IMMUNIZATION_SEQUENCE,
+                            value_numeric=dose_number,
+                            obs_group_id=parent_obs.obs_id)
+                    # Child: vaccination date
+                    add_obs(ConceptID.IMMUNIZATION_DATE,
+                            value_datetime=vaccine_date,
+                            obs_group_id=parent_obs.obs_id)
 
         return observations
 
@@ -660,6 +779,27 @@ class TestDataGenerator:
                 'voided': 0,
                 'location_id': visit.location_id,
             })
+
+        # patient_prescription (for regimen matching via pepfarTable).
+        # Each visit gets one row per drug in a randomly-selected regimen.
+        # All drugs share the same (patient_id, location_id, visit_date) so the
+        # regimen DML's progressive matching (1->2->3 drugs) can find them.
+        if patient.is_on_arv and patient.visits:
+            regimen = random.choice(REGIMEN_DEFINITIONS)
+            drug_ids = [d for d in [regimen[0], regimen[1], regimen[2]] if d != 0]
+
+            for visit in patient.visits:
+                rx_or_prophy = random.choice([ConceptID.RX_TREATMENT, None])
+                for drug_id in drug_ids:
+                    self.patient_prescription.append({
+                        'patient_id': patient.patient_id,
+                        'location_id': visit.location_id,
+                        'visit_date': visit.date_started,
+                        'drug_id': drug_id,
+                        'arv_drug': ConceptID.ARV_DRUG,
+                        'rx_or_prophy': rx_or_prophy,
+                        'voided': 0,
+                    })
 
         # patient_laboratory (viral load tests)
         if patient.is_on_arv and random.random() < self.config.pct_with_viral_load:
@@ -771,6 +911,27 @@ class TestDataGenerator:
             )
             seed_patients.append(patient)
 
+        # Status 10 (Lost pre-ARV): HIV+, not on ARV, not discontinued,
+        # single visit >12 months ago with a non-standard encounter type.
+        # Uses force_nonstandard_encounters to ensure only adherence_counseling
+        # encounters and a single visit that stays old enough.
+        seed_patients.append(Patient(
+            patient_id=self.id_gen.next('patient'),
+            birthdate=now - timedelta(days=30 * 365),
+            gender=random.choice(['M', 'F']),
+            is_hiv_positive=True,
+            is_on_arv=False,
+            is_discontinued=False,
+            discontinuation_reason=None,
+            is_pregnant=False,
+            is_pediatric=False,
+            is_exposed_infant=False,
+            date_started_arv=None,
+            location_id=1,
+            first_visit_date=now - timedelta(days=15 * 30),
+            force_nonstandard_encounters=True,
+        ))
+
         return seed_patients
 
     def generate(self) -> None:
@@ -781,6 +942,17 @@ class TestDataGenerator:
         # Setup reference data
         self.encounter_types = self._setup_encounter_types()
         self.concepts = self._setup_concepts()
+
+        # Populate static regimen definitions
+        self.regimen_definitions = [
+            {
+                'drugID1': r[0],
+                'drugID2': r[1],
+                'drugID3': r[2],
+                'shortname': r[3],
+            }
+            for r in REGIMEN_DEFINITIONS
+        ]
 
         # Generate seed patients first to ensure coverage
         seed_patients = self._generate_seed_patients()
@@ -825,7 +997,9 @@ class TestDataGenerator:
         print(f"  - {len(self.observations)} observations")
         print(f"  - {len(self.patient_on_arv)} patients on ARV")
         print(f"  - {len(self.patient_dispensing)} dispensing records")
+        print(f"  - {len(self.patient_prescription)} prescription records")
         print(f"  - {len(self.patient_laboratory)} laboratory records")
+        print(f"  - {len(self.regimen_definitions)} regimen definitions")
 
 
 # =============================================================================
@@ -1048,6 +1222,36 @@ class SQLWriter:
                     rows
                 )
 
+            # patient_prescription
+            f.write("-- Patient prescription records\n")
+            f.write("TRUNCATE TABLE patient_prescription;\n")
+            rows = [
+                (pp['patient_id'], pp['location_id'], pp['visit_date'],
+                 pp['drug_id'], pp['arv_drug'], pp['rx_or_prophy'], pp['voided'])
+                for pp in self.gen.patient_prescription
+            ]
+            if rows:
+                self._write_batch_insert(
+                    f, 'patient_prescription',
+                    ['patient_id', 'location_id', 'visit_date', 'drug_id',
+                     'arv_drug', 'rx_or_prophy', 'voided'],
+                    rows
+                )
+
+            # regimen (static definitions for drug combination matching)
+            f.write("-- Regimen definitions\n")
+            f.write("TRUNCATE TABLE regimen;\n")
+            rows = [
+                (r['drugID1'], r['drugID2'], r['drugID3'], r['shortname'])
+                for r in self.gen.regimen_definitions
+            ]
+            if rows:
+                self._write_batch_insert(
+                    f, 'regimen',
+                    ['drugID1', 'drugID2', 'drugID3', 'shortname'],
+                    rows
+                )
+
             # patient_laboratory
             f.write("-- Patient laboratory records\n")
             f.write("TRUNCATE TABLE patient_laboratory;\n")
@@ -1072,15 +1276,20 @@ class SQLWriter:
             if rows:
                 self._write_batch_insert(f, 'patient_pregnancy', ['patient_id'], rows)
 
-            # Clear output tables (to be populated by procedures)
+            # Clear output tables (to be populated by ETL script)
             f.write("-- Clear output tables\n")
             f.write("TRUNCATE TABLE patient_status_arv;\n")
             f.write("TRUNCATE TABLE exposed_infants;\n")
-            f.write("TRUNCATE TABLE alert;\n\n")
+            f.write("TRUNCATE TABLE alert;\n")
+            f.write("TRUNCATE TABLE pepfarTable;\n")
+            f.write("TRUNCATE TABLE patient_immunization;\n")
+            f.write("TRUNCATE TABLE immunization_dose;\n\n")
 
             f.write("SET FOREIGN_KEY_CHECKS = 1;\n")
 
         print(f"  Written {len(self.gen.patient_dispensing)} dispensing records")
+        print(f"  Written {len(self.gen.patient_prescription)} prescription records")
+        print(f"  Written {len(self.gen.regimen_definitions)} regimen definitions")
         print(f"  Written {len(self.gen.patient_laboratory)} laboratory records")
 
 
@@ -1878,6 +2087,36 @@ class DatabaseWriter:
                     rows
                 )
 
+            # patient_prescription
+            print(f"  Writing {len(self.gen.patient_prescription)} patient_prescription records...")
+            cursor.execute("TRUNCATE TABLE patient_prescription")
+            rows = [
+                (pp['patient_id'], pp['location_id'], pp['visit_date'],
+                 pp['drug_id'], pp['arv_drug'], pp['rx_or_prophy'], pp['voided'])
+                for pp in self.gen.patient_prescription
+            ]
+            if rows:
+                self._execute_batch_insert(
+                    cursor, 'patient_prescription',
+                    ['patient_id', 'location_id', 'visit_date', 'drug_id',
+                     'arv_drug', 'rx_or_prophy', 'voided'],
+                    rows
+                )
+
+            # regimen
+            print(f"  Writing {len(self.gen.regimen_definitions)} regimen definitions...")
+            cursor.execute("TRUNCATE TABLE regimen")
+            rows = [
+                (r['drugID1'], r['drugID2'], r['drugID3'], r['shortname'])
+                for r in self.gen.regimen_definitions
+            ]
+            if rows:
+                self._execute_batch_insert(
+                    cursor, 'regimen',
+                    ['drugID1', 'drugID2', 'drugID3', 'shortname'],
+                    rows
+                )
+
             # patient_laboratory
             print(f"  Writing {len(self.gen.patient_laboratory)} patient_laboratory records...")
             cursor.execute("TRUNCATE TABLE patient_laboratory")
@@ -1907,6 +2146,9 @@ class DatabaseWriter:
             cursor.execute("TRUNCATE TABLE patient_status_arv")
             cursor.execute("TRUNCATE TABLE exposed_infants")
             cursor.execute("TRUNCATE TABLE alert")
+            cursor.execute("TRUNCATE TABLE pepfarTable")
+            cursor.execute("TRUNCATE TABLE patient_immunization")
+            cursor.execute("TRUNCATE TABLE immunization_dose")
 
             cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
             conn.commit()
@@ -2063,12 +2305,12 @@ def main():
         print(f"  - {args.output_dir}/ddl_openmrs.sql")
         print(f"  - {args.output_dir}/ddl_isanteplus.sql")
     if sql_mode or db_mode:
-        print("\nTo test the stored procedures:")
+        print("\nTo test the ETL script:")
         print("  1. Run DDL files first to create tables (if needed)")
         print("  2. Run data files or use database mode to populate test data")
-        print("  3. Execute: CALL patient_status_arv();")
-        print("  4. Execute: CALL alert_viral_load();")
-        print("  5. Query patient_status_arv, exposed_infants, and alert tables for results")
+        print("  3. Execute: SOURCE sql_files/patient_status_arv_dml.sql")
+        print("  4. Query patient_status_arv, exposed_infants, alert, pepfarTable,")
+        print("     patient_immunization, and immunization_dose tables for results")
 
 
 if __name__ == '__main__':

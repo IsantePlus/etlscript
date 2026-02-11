@@ -1,189 +1,245 @@
 use isanteplus;
 
 -- =============================================================================
--- patient_status_arv
---
--- Calculates patient ARV treatment status (1-11) and exposed infant
--- classifications. Updates patient_status_arv, exposed_infants, and
--- patient.arv_status tables.
+-- PRÉAMBULE
 -- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS patient_status_arv$$
-CREATE PROCEDURE patient_status_arv()
-BEGIN
-    -- Save original transaction isolation level
-    DECLARE original_isolation VARCHAR(50);
+SET SQL_SAFE_UPDATES = 0;
 
-    SET SQL_SAFE_UPDATES = 0;
+-- =============================================================================
+-- PHASE GLOBALE DE LECTURE OPENMRS (ISOLATION BASSE)
+--
+-- Résout les variables de session, les UUID de types de consultation et de
+-- concepts, puis pré-charge les tables temporaires partagées en un minimum
+-- de parcours des grandes tables openmrs.obs et openmrs.encounter.
+-- =============================================================================
+
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+START TRANSACTION;
+
+-- -------------------------------------------------------------------------
+-- Résolution des UUID de type de consultation en ID (petite table)
+-- -------------------------------------------------------------------------
+SET @et_pediatric := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
+);
+SET @et_lab := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
+);
+SET @et_discontinuation := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
+);
+SET @et_pediatric_followup := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '33491314-c352-42d0-bd5d-a9d0bffc9bf1'
+);
+SET @et_first_visit := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '17536ba6-dd7c-4f58-8014-08c7cb798ac7'
+);
+SET @et_followup := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '204ad066-c5c2-4229-9a62-644bc5617ca2'
+);
+SET @et_dispensing1 := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = '10d73929-54b6-4d18-a647-8b7316bc1ae3'
+);
+SET @et_dispensing2 := (
+    SELECT encounter_type_id FROM openmrs.encounter_type
+    WHERE uuid = 'a9392241-109f-4d67-885b-57cc4b8c638f'
+);
+
+-- Résolution des UUID de concept utilisés par alert_viral_load (Section 3)
+SET @concept_isoniazid_group := (
+    SELECT concept_id FROM openmrs.concept
+    WHERE uuid = 'fee8bd39-2a95-47f9-b1f5-3f9e9b3ee959'
+);
+SET @concept_rifampicin_group := (
+    SELECT concept_id FROM openmrs.concept
+    WHERE uuid = '2b2053bd-37f3-429d-be0b-f1f8952fe55e'
+);
+SET @concept_ddp := (
+    SELECT concept_id FROM openmrs.concept
+    WHERE uuid = 'c2aacdc8-156e-4527-8934-a8fb94162419'
+);
+
+-- -------------------------------------------------------------------------
+-- Pré-chargement des données de openmrs.visit dans une table temporaire
+-- Un seul parcours de la table des visites au lieu de requêtes multiples
+-- -------------------------------------------------------------------------
+DROP TEMPORARY TABLE IF EXISTS tmp_latest_visit;
+CREATE TEMPORARY TABLE tmp_latest_visit (
+    patient_id INT NOT NULL,
+    visit_date DATE NOT NULL,
+    PRIMARY KEY (patient_id)
+) ENGINE=MEMORY
+SELECT
+    pvi.patient_id,
+    MAX(DATE(pvi.date_started)) AS visit_date
+FROM openmrs.visit pvi
+WHERE pvi.voided = 0
+GROUP BY pvi.patient_id;
+
+-- -------------------------------------------------------------------------
+-- Pré-chargement de TOUTES les données obs nécessaires en UN SEUL PARCOURS
+-- Superset des concepts utilisés par Section 1 (patient_status_arv) et
+-- Section 3 (alert_viral_load). Chaque section filtre ensuite par concept_id.
+-- Note : InnoDB utilisé au lieu de MEMORY pour éviter les limites de taille
+-- -------------------------------------------------------------------------
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
+CREATE TEMPORARY TABLE tmp_obs_snapshot (
+    obs_id INT NOT NULL,
+    person_id INT NOT NULL,
+    encounter_id INT,
+    concept_id INT NOT NULL,
+    value_coded INT,
+    value_numeric DOUBLE,
+    value_datetime DATETIME,
+    obs_datetime DATETIME,
+    obs_group_id INT,
+    location_id INT,
+    voided TINYINT,
+    PRIMARY KEY (obs_id),
+    KEY idx_person_concept (person_id, concept_id),
+    KEY idx_encounter (encounter_id),
+    KEY idx_concept_value (concept_id, value_coded),
+    KEY idx_obs_group (obs_group_id)
+)
+SELECT
+    o.obs_id,
+    o.person_id,
+    o.encounter_id,
+    o.concept_id,
+    o.value_coded,
+    o.value_numeric,
+    o.value_datetime,
+    o.obs_datetime,
+    o.obs_group_id,
+    o.location_id,
+    o.voided
+FROM openmrs.obs o
+WHERE o.concept_id IN (
+    -- Concepts Section 1
+    1030,    -- Test PCR
+    844,     -- Test sérologique
+    1401,    -- Enfant exposé
+    161555,  -- Raison d'arrêt
+    1667,    -- Détail raison d'arrêt
+    -- Concepts Section 3
+    856,     -- Charge virale numérique
+    1305,    -- Charge virale qualitative
+    -- Partagés entre les deux sections
+    1282,    -- Prescription médicament / Ordonnance de médicament
+    159367,  -- Statut médicament
+    @concept_ddp
+)
+AND o.voided <> 1;
+
+-- Deuxième copie des obs pour les auto-jointures (MySQL ne peut pas rouvrir les tables temporaires)
+-- Section 1 utilise 1667 (statut 3), Section 3 utilise 159367 (alerte TB)
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
+CREATE TEMPORARY TABLE tmp_obs_snapshot_2 (
+    obs_id INT NOT NULL,
+    person_id INT NOT NULL,
+    encounter_id INT,
+    concept_id INT NOT NULL,
+    value_coded INT,
+    obs_group_id INT,
+    PRIMARY KEY (obs_id),
+    KEY idx_obs_group (obs_group_id),
+    KEY idx_encounter_concept (encounter_id, concept_id)
+)
+SELECT
+    o.obs_id,
+    o.person_id,
+    o.encounter_id,
+    o.concept_id,
+    o.value_coded,
+    o.obs_group_id
+FROM openmrs.obs o
+WHERE o.concept_id IN (
+    1667,    -- Détail raison d'arrêt (auto-jointure statut 3 dans Section 1)
+    159367   -- Statut du médicament (auto-jointure alerte TB dans Section 3)
+)
+AND o.voided <> 1;
+
+-- Copie séparée pour les recherches de groupes obs (groupes INH/Rifampicine)
+-- Utilisée par Section 3 pour les alertes TB/VIH (alertes 9)
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_group_snapshot;
+CREATE TEMPORARY TABLE tmp_obs_group_snapshot (
+    obs_id INT NOT NULL,
+    person_id INT NOT NULL,
+    encounter_id INT,
+    concept_id INT NOT NULL,
+    obs_group_id INT,
+    PRIMARY KEY (obs_id),
+    KEY idx_obs_group (obs_group_id)
+)
+SELECT
+    o.obs_id,
+    o.person_id,
+    o.encounter_id,
+    o.concept_id,
+    o.obs_group_id
+FROM openmrs.obs o
+WHERE o.concept_id IN (@concept_isoniazid_group, @concept_rifampicin_group)
+  AND o.voided <> 1;
+
+-- -------------------------------------------------------------------------
+-- Pré-chargement des données de consultation nécessaires aux jointures
+-- Partagé entre Section 1 et Section 3 (auparavant créé deux fois)
+-- Note : InnoDB utilisé au lieu de MEMORY pour éviter les limites de taille
+-- -------------------------------------------------------------------------
+DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
+CREATE TEMPORARY TABLE tmp_encounter_snapshot (
+    encounter_id INT NOT NULL,
+    patient_id INT NOT NULL,
+    visit_id INT,
+    encounter_type INT,
+    encounter_datetime DATETIME,
+    voided TINYINT,
+    PRIMARY KEY (encounter_id),
+    KEY idx_patient (patient_id),
+    KEY idx_visit (visit_id),
+    KEY idx_type (encounter_type)
+)
+SELECT
+    e.encounter_id,
+    e.patient_id,
+    e.visit_id,
+    e.encounter_type,
+    e.encounter_datetime,
+    e.voided
+FROM openmrs.encounter e
+WHERE e.voided <> 1;
+
+-- Valider la transaction de lecture - libère les verrous sur les tables openmrs
+COMMIT;
+
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+-- =============================================================================
+-- SECTION 1 : patient_status_arv
+--
+-- Calcule le statut ARV des patients (1-11) et les classifications des
+-- nourrissons exposés. Met à jour les tables patient_status_arv,
+-- exposed_infants et patient.arv_status.
+-- =============================================================================
 
     -- =========================================================================
-    -- PHASE 1: READ FROM OPENMRS TABLES (LOW ISOLATION)
+    -- PHASE 2 : LECTURE DES TABLES ISANTEPLUS
+    -- Tables ETL - isolation normale puisque ces tables nous appartiennent
     -- =========================================================================
 
-    SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
     START TRANSACTION;
 
-    -- -------------------------------------------------------------------------
-    -- Resolve encounter type UUIDs to IDs (small table, quick read)
-    -- -------------------------------------------------------------------------
-    SET @et_pediatric := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
-    );
-    SET @et_lab := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = 'f037e97b-471e-4898-a07c-b8e169e0ddc4'
-    );
-    SET @et_discontinuation := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-    );
-    SET @et_pediatric_followup := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '33491314-c352-42d0-bd5d-a9d0bffc9bf1'
-    );
-    SET @et_first_visit := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '17536ba6-dd7c-4f58-8014-08c7cb798ac7'
-    );
-    SET @et_followup := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '204ad066-c5c2-4229-9a62-644bc5617ca2'
-    );
-    SET @et_dispensing1 := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '10d73929-54b6-4d18-a647-8b7316bc1ae3'
-    );
-    SET @et_dispensing2 := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = 'a9392241-109f-4d67-885b-57cc4b8c638f'
-    );
-
-    -- -------------------------------------------------------------------------
-    -- Pre-fetch data from openmrs.visit into temp table
-    -- Single scan of visits table instead of multiple queries
-    -- -------------------------------------------------------------------------
-    DROP TEMPORARY TABLE IF EXISTS tmp_latest_visit;
-    CREATE TEMPORARY TABLE tmp_latest_visit (
-        patient_id INT NOT NULL,
-        visit_date DATE NOT NULL,
-        PRIMARY KEY (patient_id)
-    ) ENGINE=MEMORY
-    SELECT
-        pvi.patient_id,
-        MAX(DATE(pvi.date_started)) AS visit_date
-    FROM openmrs.visit pvi
-    WHERE pvi.voided = 0
-    GROUP BY pvi.patient_id;
-
-    -- -------------------------------------------------------------------------
-    -- Pre-fetch ALL needed obs data in a SINGLE SCAN of openmrs.obs
-    -- This is the key optimization - obs is the largest table
-    -- Note: Using default engine (InnoDB) instead of MEMORY to avoid size limits
-    -- -------------------------------------------------------------------------
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
-    CREATE TEMPORARY TABLE tmp_obs_snapshot (
-        obs_id INT NOT NULL,
-        person_id INT NOT NULL,
-        encounter_id INT,
-        concept_id INT NOT NULL,
-        value_coded INT,
-        value_numeric DOUBLE,
-        obs_datetime DATETIME,
-        obs_group_id INT,
-        location_id INT,
-        voided TINYINT,
-        PRIMARY KEY (obs_id),
-        KEY idx_person_concept (person_id, concept_id),
-        KEY idx_encounter (encounter_id),
-        KEY idx_concept_value (concept_id, value_coded),
-        KEY idx_obs_group (obs_group_id)
-    )
-    SELECT
-        o.obs_id,
-        o.person_id,
-        o.encounter_id,
-        o.concept_id,
-        o.value_coded,
-        o.value_numeric,
-        o.obs_datetime,
-        o.obs_group_id,
-        o.location_id,
-        o.voided
-    FROM openmrs.obs o
-    WHERE o.concept_id IN (
-        1030,    -- PCR test
-        844,     -- Sero test
-        1401,    -- Exposed infant checkbox
-        161555,  -- Discontinuation reason
-        1667,    -- Stop reason detail
-        1282,    -- Drug order
-        159367   -- Drug status
-    )
-    AND o.voided <> 1;
-
-    -- Second copy of obs for self-joins (MySQL can't reopen temp tables)
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
-    CREATE TEMPORARY TABLE tmp_obs_snapshot_2 (
-        obs_id INT NOT NULL,
-        person_id INT NOT NULL,
-        encounter_id INT,
-        concept_id INT NOT NULL,
-        value_coded INT,
-        PRIMARY KEY (obs_id),
-        KEY idx_encounter_concept (encounter_id, concept_id)
-    )
-    SELECT
-        o.obs_id,
-        o.person_id,
-        o.encounter_id,
-        o.concept_id,
-        o.value_coded
-    FROM openmrs.obs o
-    WHERE o.concept_id = 1667  -- Stop reason detail (needed for status 3 self-join)
-      AND o.voided <> 1;
-
-    -- -------------------------------------------------------------------------
-    -- Pre-fetch encounter data needed for joins
-    -- Note: Using default engine (InnoDB) instead of MEMORY to avoid size limits
-    -- -------------------------------------------------------------------------
-    DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
-    CREATE TEMPORARY TABLE tmp_encounter_snapshot (
-        encounter_id INT NOT NULL,
-        patient_id INT NOT NULL,
-        visit_id INT,
-        encounter_type INT,
-        encounter_datetime DATETIME,
-        voided TINYINT,
-        PRIMARY KEY (encounter_id),
-        KEY idx_patient (patient_id),
-        KEY idx_visit (visit_id),
-        KEY idx_type (encounter_type)
-    )
-    SELECT
-        e.encounter_id,
-        e.patient_id,
-        e.visit_id,
-        e.encounter_type,
-        e.encounter_datetime,
-        e.voided
-    FROM openmrs.encounter e
-    WHERE e.voided <> 1;
-
-    -- Commit the read transaction - releases any read locks on openmrs tables
-    COMMIT;
-
-    -- =========================================================================
-    -- PHASE 2: READ FROM ISANTEPLUS TABLES (also low isolation)
-    -- These are ETL tables, but still use READ UNCOMMITTED for consistency
-    -- =========================================================================
-
-    START TRANSACTION;
-
-    -- Temp table: Patients with discontinuation reasons (used for statuses 6, 8, 9)
-    -- Includes all three reasons: 159 (deceased), 1667 (stopped), 159492 (transferred)
-    DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_patients;
-    CREATE TEMPORARY TABLE tmp_discontinued_patients (
+    -- Table temporaire : Patients avec raisons d'arrêt (utilisée pour statuts 6, 8, 9)
+    -- Inclut les trois raisons : 159 (décédé), 1667 (arrêté), 159492 (transféré)
+    DROP TEMPORARY TABLE IF EXISTS tmp_disc_patients_by_reason;
+    CREATE TEMPORARY TABLE tmp_disc_patients_by_reason (
         patient_id INT NOT NULL,
         PRIMARY KEY (patient_id)
     ) ENGINE=MEMORY
@@ -191,8 +247,8 @@ BEGIN
     FROM isanteplus.discontinuation_reason
     WHERE reason IN (159, 1667, 159492);
 
-    -- Temp table: Patients with discontinuation reasons for pre-ARV statuses (7, 10, 11)
-    -- Only excludes deceased (159) and transferred (159492), NOT stopped (1667)
+    -- Table temporaire : Patients avec raisons d'arrêt pour statuts pré-ARV (7, 10, 11)
+    -- Exclut seulement décédé (159) et transféré (159492), PAS arrêté (1667)
     DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_pre_arv;
     CREATE TEMPORARY TABLE tmp_discontinued_pre_arv (
         patient_id INT NOT NULL,
@@ -202,7 +258,7 @@ BEGIN
     FROM isanteplus.discontinuation_reason
     WHERE reason IN (159, 159492);
 
-    -- Temp table: Latest dispensation date per patient
+    -- Table temporaire : Dernière date de dispensation par patient
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation;
     CREATE TEMPORARY TABLE tmp_latest_dispensation (
         patient_id INT NOT NULL,
@@ -220,13 +276,11 @@ BEGIN
     COMMIT;
 
     -- =========================================================================
-    -- PHASE 3: WRITE TO ISANTEPLUS TABLES
+    -- PHASE 3 : ÉCRITURE DANS LES TABLES ISANTEPLUS
     -- =========================================================================
 
-    SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
-
     -- =========================================================================
-    -- DELETE patients whose prescription forms are modified
+    -- DELETE des patients dont les fiches d'ordonnance sont modifiées
     -- =========================================================================
     START TRANSACTION;
 
@@ -240,7 +294,8 @@ BEGIN
     ) valid_patients ON poa.patient_id = valid_patients.patient_id
     WHERE valid_patients.patient_id IS NULL;
 
-    -- Temp table: Patients on ARV (created AFTER delete to reflect current state)
+    -- Table temporaire : Patients sous ARV (créée APRÈS le DELETE pour refléter l'état actuel)
+    -- Partagée avec Section 3 (alert_viral_load)
     DROP TEMPORARY TABLE IF EXISTS tmp_patients_on_arv;
     CREATE TEMPORARY TABLE tmp_patients_on_arv (
         patient_id INT NOT NULL,
@@ -251,15 +306,15 @@ BEGIN
     COMMIT;
 
     -- =========================================================================
-    -- EXPOSED INFANTS SECTION
+    -- SECTION ENFANTS EXPOSÉS
     -- =========================================================================
     START TRANSACTION;
 
     TRUNCATE TABLE exposed_infants;
 
     -- -------------------------------------------------------------------------
-    -- Patients with negative PCR results (condition_exposee = 1)
-    -- Now using pre-fetched obs and encounter snapshots
+    -- Patients avec résultats PCR négatifs (condition_exposee = 1)
+    -- Utilise les instantanés obs et consultation pré-chargés
     -- -------------------------------------------------------------------------
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_pcr_encounter;
     CREATE TEMPORARY TABLE tmp_latest_pcr_encounter (
@@ -306,7 +361,7 @@ BEGIN
        AND DATE(e.encounter_datetime) = DATE(B.visit_date)
     WHERE e.encounter_type IN (@et_pediatric, @et_lab)
       AND o.concept_id IN (1030, 844)
-      AND o.value_coded IN (664, 1302);  -- Negative results
+      AND o.value_coded IN (664, 1302);  -- Résultats négatifs
 
     INSERT INTO exposed_infants(patient_id, location_id, encounter_id, visit_date, condition_exposee)
     SELECT ppn.patient_id, ppn.location_id, ppn.encounter_id, ppn.encounter_date, 1
@@ -318,7 +373,7 @@ BEGIN
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_pcr_encounter;
 
     -- -------------------------------------------------------------------------
-    -- Condition B - Enfant exposé checkbox
+    -- Condition B - Enfant exposé coché
     -- -------------------------------------------------------------------------
     INSERT INTO exposed_infants(patient_id, location_id, encounter_id, visit_date, condition_exposee)
     SELECT DISTINCT
@@ -334,7 +389,7 @@ BEGIN
       AND ob.value_coded = 1405;
 
     -- -------------------------------------------------------------------------
-    -- Condition D - ARV in prophylaxis
+    -- Condition D - ARV en prophylaxie
     -- -------------------------------------------------------------------------
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensing;
     CREATE TEMPORARY TABLE tmp_latest_dispensing (
@@ -365,7 +420,7 @@ BEGIN
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensing;
 
     -- -------------------------------------------------------------------------
-    -- Remove patients with positive PCR from exposed_infants
+    -- Retirer les patients avec PCR positif de exposed_infants
     -- -------------------------------------------------------------------------
     DROP TEMPORARY TABLE IF EXISTS patient_pcr_positif;
     CREATE TEMPORARY TABLE patient_pcr_positif (
@@ -398,7 +453,7 @@ BEGIN
     DROP TEMPORARY TABLE IF EXISTS patient_pcr_positif;
 
     -- -------------------------------------------------------------------------
-    -- Remove patients with HIV positive test (age >= 18 months)
+    -- Retirer les patients avec test VIH positif (âge >= 18 mois)
     -- -------------------------------------------------------------------------
     DELETE ei FROM exposed_infants ei
     INNER JOIN (
@@ -413,7 +468,7 @@ BEGIN
     ) hiv_positive ON ei.patient_id = hiv_positive.patient_id;
 
     -- -------------------------------------------------------------------------
-    -- Remove patients with HIV confirmed by serological test
+    -- Retirer les patients VIH confirmé par test sérologique
     -- -------------------------------------------------------------------------
     DELETE ei FROM exposed_infants ei
     INNER JOIN (
@@ -444,19 +499,19 @@ BEGIN
     COMMIT;
 
     -- =========================================================================
-    -- PATIENT STATUS ARV SECTION
-    -- Process in smaller transactions to reduce lock duration
+    -- SECTION STATUT ARV DES PATIENTS
+    -- Traitement en transactions plus petites pour réduire la durée des verrous
     -- =========================================================================
 
-    -- Transaction: Delete today's status
+    -- Transaction : Suppression des statuts du jour
     START TRANSACTION;
     DELETE FROM patient_status_arv WHERE DATE(date_started_status) = CURDATE();
     COMMIT;
 
-    -- Transaction: Status 4 and 5 (Deceased/Transferred pre-ARV)
+    -- Transaction : Statuts 4 et 5 (Décédés/Transférés en Pré-ARV)
     START TRANSACTION;
 
-    -- Status 4: Décédés en Pré-ARV (Deceased pre-ARV)
+    -- Statut 4 : Décédés en Pré-ARV
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         v.patient_id,
@@ -484,7 +539,7 @@ BEGIN
     GROUP BY v.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 5: Transférés en Pré-ARV (Transferred pre-ARV)
+    -- Statut 5 : Transférés en Pré-ARV
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         v.patient_id,
@@ -514,10 +569,10 @@ BEGIN
 
     COMMIT;
 
-    -- Transaction: Status 6, 8, 9 (Regular, Missed, Lost - dispensation based)
+    -- Transaction : Statuts 6, 8, 9 (Réguliers, Rendez-vous ratés, Perdus de vue - basé sur dispensation)
     START TRANSACTION;
 
-    -- Status 6: Réguliers (Regular - on ARV, next dispensation not yet due)
+    -- Statut 6 : Réguliers (sous ARV, prochaine dispensation pas encore due)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         pdis.patient_id,
@@ -533,7 +588,7 @@ BEGIN
         ON pdis.patient_id = mndisp.patient_id
        AND pdis.next_dispensation_date = mndisp.next_dispensation_date
     INNER JOIN tmp_encounter_snapshot enc ON pdis.visit_id = enc.visit_id
-    LEFT JOIN tmp_discontinued_patients dreason ON enc.patient_id = dreason.patient_id
+    LEFT JOIN tmp_disc_patients_by_reason dreason ON enc.patient_id = dreason.patient_id
     WHERE enc.encounter_type IN (@et_dispensing1, @et_dispensing2)
       AND dreason.patient_id IS NULL
       AND pdis.arv_drug = 1065
@@ -542,7 +597,7 @@ BEGIN
     GROUP BY pdis.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 8: Rendez-vous ratés (Missed appointment - 1-30 days overdue)
+    -- Statut 8 : Rendez-vous ratés (1-30 jours de retard)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         pdis.patient_id,
@@ -558,7 +613,7 @@ BEGIN
        AND pdis.next_dispensation_date = mndisp.next_dispensation_date
     INNER JOIN tmp_encounter_snapshot enc ON pdis.visit_id = enc.visit_id
     INNER JOIN tmp_patients_on_arv parv ON enc.patient_id = parv.patient_id
-    LEFT JOIN tmp_discontinued_patients dreason ON enc.patient_id = dreason.patient_id
+    LEFT JOIN tmp_disc_patients_by_reason dreason ON enc.patient_id = dreason.patient_id
     WHERE enc.encounter_type IN (@et_dispensing1, @et_dispensing2)
       AND dreason.patient_id IS NULL
       AND DATEDIFF(CURDATE(), pdis.next_dispensation_date) BETWEEN 1 AND 30
@@ -566,7 +621,7 @@ BEGIN
     GROUP BY pdis.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 9: Perdus de vue (Lost to follow-up - >30 days overdue)
+    -- Statut 9 : Perdus de vue (>30 jours de retard)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         pdis.patient_id,
@@ -581,7 +636,7 @@ BEGIN
        AND pdis.next_dispensation_date = mndisp.next_dispensation_date
     INNER JOIN tmp_encounter_snapshot enc ON pdis.visit_id = enc.visit_id
     INNER JOIN tmp_patients_on_arv parv ON enc.patient_id = parv.patient_id
-    LEFT JOIN tmp_discontinued_patients dreason ON enc.patient_id = dreason.patient_id
+    LEFT JOIN tmp_disc_patients_by_reason dreason ON enc.patient_id = dreason.patient_id
     WHERE enc.encounter_type IN (@et_dispensing1, @et_dispensing2)
       AND dreason.patient_id IS NULL
       AND pdis.arv_drug = 1065
@@ -592,11 +647,11 @@ BEGIN
 
     COMMIT;
 
-    -- Transaction: Status 10, 7, 11 (Pre-ARV statuses)
+    -- Transaction : Statuts 10, 7, 11 (Statuts pré-ARV)
     START TRANSACTION;
 
-    -- Status 10: Perdus de vue en Pré-ARV (Lost to follow-up pre-ARV)
-    -- Uses tmp_discontinued_pre_arv (only reasons 159, 159492 - NOT 1667)
+    -- Statut 10 : Perdus de vue en Pré-ARV
+    -- Utilise tmp_discontinued_pre_arv (raisons 159, 159492 seulement - PAS 1667)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         v.patient_id,
@@ -625,8 +680,8 @@ BEGIN
     GROUP BY v.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 7: Récent en Pré-ARV (Recent pre-ARV - within 12 months)
-    -- Uses tmp_discontinued_pre_arv (only reasons 159, 159492 - NOT 1667)
+    -- Statut 7 : Récent en Pré-ARV (dans les 12 derniers mois)
+    -- Utilise tmp_discontinued_pre_arv (raisons 159, 159492 seulement - PAS 1667)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         v.patient_id,
@@ -652,8 +707,8 @@ BEGIN
     GROUP BY v.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 11: Actifs en Pré-ARV (Active pre-ARV - within 12 months)
-    -- Uses tmp_discontinued_pre_arv (only reasons 159, 159492 - NOT 1667)
+    -- Statut 11 : Actifs en Pré-ARV (dans les 12 derniers mois)
+    -- Utilise tmp_discontinued_pre_arv (raisons 159, 159492 seulement - PAS 1667)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         v.patient_id,
@@ -681,10 +736,10 @@ BEGIN
 
     COMMIT;
 
-    -- Transaction: Status 1, 2, 3 (Deceased, Transferred, Stopped on ARV)
+    -- Transaction : Statuts 1, 2, 3 (Décédés, Transférés, Arrêtés sous ARV)
     START TRANSACTION;
 
-    -- Status 1: Décédés (Deceased on ARV)
+    -- Statut 1 : Décédés (sous ARV)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         enc.patient_id,
@@ -704,7 +759,7 @@ BEGIN
     GROUP BY enc.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 2: Transférés (Transferred on ARV)
+    -- Statut 2 : Transférés (sous ARV)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         enc.patient_id,
@@ -724,7 +779,7 @@ BEGIN
     GROUP BY enc.patient_id
     ON DUPLICATE KEY UPDATE last_updated_date = VALUES(last_updated_date);
 
-    -- Status 3: Arrêtés (Stopped ARV treatment)
+    -- Statut 3 : Arrêtés (traitement ARV)
     INSERT INTO patient_status_arv(patient_id, id_status, start_date, encounter_id, last_updated_date, date_started_status)
     SELECT
         enc.patient_id,
@@ -751,30 +806,30 @@ BEGIN
     COMMIT;
 
     -- =========================================================================
-    -- FINAL UPDATES
+    -- MISES À JOUR FINALES
     -- =========================================================================
     START TRANSACTION;
 
-    -- Update discontinuation reason
+    -- Mise à jour de la raison d'arrêt
     UPDATE patient_status_arv psarv
     INNER JOIN discontinuation_reason dreason
         ON psarv.patient_id = dreason.patient_id
        AND psarv.start_date <= dreason.visit_date
     SET psarv.dis_reason = dreason.reason;
 
-    -- Delete exposed infants from patient_status_arv
+    -- Supprimer les enfants exposés de patient_status_arv
     DELETE psarv FROM patient_status_arv psarv
     INNER JOIN exposed_infants ei ON psarv.patient_id = ei.patient_id;
 
     COMMIT;
 
-    -- Transaction: Update patient table (separate transaction to limit lock scope)
+    -- Transaction : Mise à jour de la table patient (transaction séparée pour limiter la portée des verrous)
     START TRANSACTION;
 
-    -- Reset arv_status
+    -- Réinitialiser arv_status
     UPDATE patient SET arv_status = NULL WHERE arv_status IS NOT NULL;
 
-    -- Update patient table with last status
+    -- Mise à jour de la table patient avec le dernier statut
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_status;
     CREATE TEMPORARY TABLE tmp_latest_status (
         patient_id INT NOT NULL,
@@ -794,43 +849,28 @@ BEGIN
 
     COMMIT;
 
-    -- =========================================================================
-    -- CLEANUP
-    -- =========================================================================
-    DROP TEMPORARY TABLE IF EXISTS tmp_latest_visit;
-    DROP TEMPORARY TABLE IF EXISTS tmp_patients_on_arv;
-    DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_patients;
+    -- Section 1 cleanup (tables locales uniquement)
+    DROP TEMPORARY TABLE IF EXISTS tmp_disc_patients_by_reason;
     DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_pre_arv;
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation;
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_status;
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
-    DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
-
-END$$
-DELIMITER ;
 
 -- =============================================================================
--- isanteplusregimen_dml
+-- SECTION 2 : isanteplusregimen_dml
 --
--- Calculates ARV regimen combinations from patient prescriptions and updates
--- the pepfarTable and openmrs.isanteplus_patient_arv tables.
+-- Calcule les combinaisons de régimes ARV à partir des prescriptions et met
+-- à jour les tables pepfarTable et openmrs.isanteplus_patient_arv.
 -- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS isanteplusregimen_dml$$
-CREATE PROCEDURE isanteplusregimen_dml()
-BEGIN
-    SET SQL_SAFE_UPDATES = 0;
 
     -- =========================================================================
-    -- Cleanup temp tables from previous runs
+    -- Nettoyage des tables temporaires des exécutions précédentes
     -- =========================================================================
     DROP TABLE IF EXISTS pepfarTableTemp;
     DROP TABLE IF EXISTS oneDrugRegimenPrefixTemp;
     DROP TABLE IF EXISTS twoDrugRegimenPrefixTemp;
 
     -- =========================================================================
-    -- Remove voided prescriptions from pepfarTable
+    -- Supprimer les prescriptions annulées de pepfarTable
     -- =========================================================================
     DELETE pt FROM pepfarTable pt
     INNER JOIN patient_prescription pp
@@ -840,10 +880,10 @@ BEGIN
     WHERE pp.voided = 1;
 
     -- =========================================================================
-    -- Build regimen combinations
+    -- Construction des combinaisons de régimes
     -- =========================================================================
 
-    -- Temp table for final results
+    -- Table temporaire pour les résultats finaux
     CREATE TEMPORARY TABLE pepfarTableTemp (
         location_id INT(11),
         patient_id INT(11),
@@ -853,7 +893,7 @@ BEGIN
     );
 
     -- -------------------------------------------------------------------------
-    -- Step 1: Find all single-drug ARV prescriptions
+    -- Étape 1 : Trouver toutes les prescriptions ARV à un seul médicament
     -- -------------------------------------------------------------------------
     CREATE TEMPORARY TABLE oneDrugRegimenPrefixTemp (
         location_id INT(11),
@@ -876,7 +916,7 @@ BEGIN
     WHERE d1.arv_drug = 1065
       AND d1.voided <> 1;
 
-    -- Insert single-drug regimens (where drugID2 and drugID3 are 0)
+    -- Insérer les régimes à un seul médicament (drugID2 et drugID3 = 0)
     INSERT INTO pepfarTableTemp (location_id, patient_id, visit_date, regimen, rx_or_prophy)
     SELECT DISTINCT
         d1.location_id,
@@ -890,7 +930,7 @@ BEGIN
       AND r.drugID3 = 0;
 
     -- -------------------------------------------------------------------------
-    -- Step 2: Find two-drug ARV combinations
+    -- Étape 2 : Trouver les combinaisons ARV à deux médicaments
     -- -------------------------------------------------------------------------
     CREATE TEMPORARY TABLE twoDrugRegimenPrefixTemp (
         location_id INT(11),
@@ -916,7 +956,7 @@ BEGIN
        AND r.drugID2 = d2.drug_id
     WHERE d2.voided <> 1;
 
-    -- Insert two-drug regimens (where drugID3 is 0)
+    -- Insérer les régimes à deux médicaments (drugID3 = 0)
     INSERT INTO pepfarTableTemp (location_id, patient_id, visit_date, regimen, rx_or_prophy)
     SELECT DISTINCT
         prefix.location_id,
@@ -931,7 +971,7 @@ BEGIN
     WHERE r.drugID3 = 0;
 
     -- -------------------------------------------------------------------------
-    -- Step 3: Find three-drug ARV combinations
+    -- Étape 3 : Trouver les combinaisons ARV à trois médicaments
     -- -------------------------------------------------------------------------
     INSERT INTO pepfarTableTemp (location_id, patient_id, visit_date, regimen, rx_or_prophy)
     SELECT DISTINCT
@@ -950,7 +990,7 @@ BEGIN
       AND pp.voided <> 1;
 
     -- =========================================================================
-    -- Update pepfarTable with results
+    -- Mise à jour de pepfarTable avec les résultats
     -- =========================================================================
     INSERT INTO pepfarTable (location_id, patient_id, visit_date, regimen, rx_or_prophy, last_updated_date)
     SELECT
@@ -966,7 +1006,7 @@ BEGIN
         last_updated_date = NOW();
 
     -- =========================================================================
-    -- Update openmrs.isanteplus_patient_arv with latest regimen
+    -- Mise à jour de openmrs.isanteplus_patient_arv avec le dernier régime
     -- =========================================================================
     INSERT INTO openmrs.isanteplus_patient_arv (patient_id, arv_regimen, date_created, date_changed)
     SELECT
@@ -984,13 +1024,13 @@ BEGIN
         arv_regimen = pft.regimen,
         date_changed = NOW();
 
-    -- Cleanup temp tables
+    -- Nettoyage des tables temporaires
     DROP TEMPORARY TABLE oneDrugRegimenPrefixTemp;
     DROP TEMPORARY TABLE twoDrugRegimenPrefixTemp;
     DROP TEMPORARY TABLE pepfarTableTemp;
 
     -- =========================================================================
-    -- Transfer ARV status info to openmrs.isanteplus_patient_arv
+    -- Transfert des informations de statut ARV vers openmrs.isanteplus_patient_arv
     -- =========================================================================
     INSERT INTO openmrs.isanteplus_patient_arv
         (patient_id, arv_status, date_started_arv, next_visit_date, date_created, date_changed)
@@ -1012,191 +1052,24 @@ BEGIN
         next_visit_date = p.next_visit_date,
         date_changed = NOW();
 
-END$$
-DELIMITER ;
-
 -- =============================================================================
--- alert_viral_load
+-- SECTION 3 : alert_viral_load
 --
--- Generates clinical alerts for patients based on viral load results,
--- ARV dispensation, TB co-infection, and INH prophylaxis status.
--- Populates the alert table with alert codes (1-12).
+-- Génère des alertes cliniques pour les patients selon les résultats de
+-- charge virale, la dispensation ARV, la co-infection TB et le statut
+-- de prophylaxie INH. Alimente la table alert avec les codes (1-12).
 -- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS alert_viral_load$$
-CREATE PROCEDURE alert_viral_load()
-BEGIN
-    SET SQL_SAFE_UPDATES = 0;
 
     -- =========================================================================
-    -- PHASE 1: READ FROM OPENMRS TABLES (LOW ISOLATION)
-    -- Use READ UNCOMMITTED to avoid blocking production queries
+    -- PHASE 2 : LECTURE DES TABLES ISANTEPLUS ET CONSTRUCTION DES TABLES
+    -- LOCALES À SECTION 3
     -- =========================================================================
 
-    SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
     START TRANSACTION;
 
-    -- -------------------------------------------------------------------------
-    -- Resolve encounter type and concept UUIDs to IDs
-    -- -------------------------------------------------------------------------
-    SET @et_discontinuation := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '9d0113c6-f23a-4461-8428-7e9a7344f2ba'
-    );
-    SET @et_first_visit := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '17536ba6-dd7c-4f58-8014-08c7cb798ac7'
-    );
-    SET @et_followup := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '204ad066-c5c2-4229-9a62-644bc5617ca2'
-    );
-    SET @et_pediatric := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '349ae0b4-65c1-4122-aa06-480f186c8350'
-    );
-    SET @et_pediatric_followup := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '33491314-c352-42d0-bd5d-a9d0bffc9bf1'
-    );
-    SET @et_dispensing1 := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = '10d73929-54b6-4d18-a647-8b7316bc1ae3'
-    );
-    SET @et_dispensing2 := (
-        SELECT encounter_type_id FROM openmrs.encounter_type
-        WHERE uuid = 'a9392241-109f-4d67-885b-57cc4b8c638f'
-    );
-
-    SET @concept_isoniazid_group := (
-        SELECT concept_id FROM openmrs.concept
-        WHERE uuid = 'fee8bd39-2a95-47f9-b1f5-3f9e9b3ee959'
-    );
-    SET @concept_rifampicin_group := (
-        SELECT concept_id FROM openmrs.concept
-        WHERE uuid = '2b2053bd-37f3-429d-be0b-f1f8952fe55e'
-    );
-    SET @concept_ddp := (
-        SELECT concept_id FROM openmrs.concept
-        WHERE uuid = 'c2aacdc8-156e-4527-8934-a8fb94162419'
-    );
-
-    -- -------------------------------------------------------------------------
-    -- Pre-fetch ALL needed obs data in a SINGLE SCAN of openmrs.obs
-    -- -------------------------------------------------------------------------
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
-    CREATE TEMPORARY TABLE tmp_obs_snapshot (
-        obs_id INT NOT NULL,
-        person_id INT NOT NULL,
-        encounter_id INT,
-        concept_id INT NOT NULL,
-        value_coded INT,
-        value_numeric DOUBLE,
-        value_datetime DATETIME,
-        obs_datetime DATETIME,
-        obs_group_id INT,
-        location_id INT,
-        voided TINYINT,
-        PRIMARY KEY (obs_id),
-        KEY idx_person_concept (person_id, concept_id),
-        KEY idx_encounter (encounter_id),
-        KEY idx_concept_value (concept_id, value_coded),
-        KEY idx_obs_group (obs_group_id)
-    )
-    SELECT
-        o.obs_id,
-        o.person_id,
-        o.encounter_id,
-        o.concept_id,
-        o.value_coded,
-        o.value_numeric,
-        o.value_datetime,
-        o.obs_datetime,
-        o.obs_group_id,
-        o.location_id,
-        o.voided
-    FROM openmrs.obs o
-    WHERE o.concept_id IN (
-        856,     -- Viral load numeric
-        1305,    -- Viral load qualitative
-        1282,    -- Drug order
-        159367,  -- Drug status
-        @concept_ddp
-    )
-    AND o.voided <> 1;
-
-    -- Second copy of obs for self-joins (MySQL can't reopen temp tables)
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
-    CREATE TEMPORARY TABLE tmp_obs_snapshot_2 (
-        obs_id INT NOT NULL,
-        person_id INT NOT NULL,
-        encounter_id INT,
-        concept_id INT NOT NULL,
-        value_coded INT,
-        obs_group_id INT,
-        PRIMARY KEY (obs_id),
-        KEY idx_obs_group (obs_group_id),
-        KEY idx_encounter_concept (encounter_id, concept_id)
-    )
-    SELECT
-        o.obs_id,
-        o.person_id,
-        o.encounter_id,
-        o.concept_id,
-        o.value_coded,
-        o.obs_group_id
-    FROM openmrs.obs o
-    WHERE o.concept_id IN (1282, 159367)  -- Drug order and Drug status (needed for TB alert self-joins)
-      AND o.voided <> 1;
-
-    -- Separate snapshot for obs group lookups (INH/Rifampicin groups)
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_group_snapshot;
-    CREATE TEMPORARY TABLE tmp_obs_group_snapshot (
-        obs_id INT NOT NULL,
-        person_id INT NOT NULL,
-        encounter_id INT,
-        concept_id INT NOT NULL,
-        obs_group_id INT,
-        PRIMARY KEY (obs_id),
-        KEY idx_obs_group (obs_group_id)
-    )
-    SELECT
-        o.obs_id,
-        o.person_id,
-        o.encounter_id,
-        o.concept_id,
-        o.obs_group_id
-    FROM openmrs.obs o
-    WHERE o.concept_id IN (@concept_isoniazid_group, @concept_rifampicin_group)
-      AND o.voided <> 1;
-
-    -- Pre-fetch encounter data needed for joins
-    DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
-    CREATE TEMPORARY TABLE tmp_encounter_snapshot (
-        encounter_id INT NOT NULL,
-        patient_id INT NOT NULL,
-        visit_id INT,
-        encounter_type INT,
-        encounter_datetime DATETIME,
-        voided TINYINT,
-        PRIMARY KEY (encounter_id),
-        KEY idx_patient (patient_id),
-        KEY idx_visit (visit_id),
-        KEY idx_type (encounter_type)
-    )
-    SELECT
-        e.encounter_id,
-        e.patient_id,
-        e.visit_id,
-        e.encounter_type,
-        e.encounter_datetime,
-        e.voided
-    FROM openmrs.encounter e
-    WHERE e.voided <> 1;
-
-    -- Patients with discontinuation encounter
-    DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_patients;
-    CREATE TEMPORARY TABLE tmp_discontinued_patients (
+    -- Patients avec une consultation d'arrêt (filtre par encounter_type, pas par motif)
+    DROP TEMPORARY TABLE IF EXISTS tmp_disc_patients_by_encounter;
+    CREATE TEMPORARY TABLE tmp_disc_patients_by_encounter (
         patient_id INT NOT NULL,
         PRIMARY KEY (patient_id)
     ) ENGINE=MEMORY
@@ -1205,7 +1078,7 @@ BEGIN
     INNER JOIN isanteplus.discontinuation_reason dr ON enc.patient_id = dr.patient_id
     WHERE enc.encounter_type = @et_discontinuation;
 
-    -- Patients with any discontinuation encounter (without reason check)
+    -- Patients avec toute consultation d'arrêt (sans vérification de motif)
     DROP TEMPORARY TABLE IF EXISTS tmp_any_discontinuation;
     CREATE TEMPORARY TABLE tmp_any_discontinuation (
         patient_id INT NOT NULL,
@@ -1215,7 +1088,7 @@ BEGIN
     FROM tmp_encounter_snapshot
     WHERE encounter_type = @et_discontinuation;
 
-    -- Latest obs datetime for viral load concepts
+    -- Dernière date d'observation pour les concepts de charge virale
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_obs_viral_load;
     CREATE TEMPORARY TABLE tmp_latest_obs_viral_load (
         person_id INT NOT NULL,
@@ -1229,16 +1102,7 @@ BEGIN
     WHERE o.concept_id IN (856, 1305)
     GROUP BY o.person_id;
 
-    -- Commit the read transaction - releases any read locks on openmrs tables
-    COMMIT;
-
-    -- =========================================================================
-    -- PHASE 2: READ FROM ISANTEPLUS TABLES
-    -- =========================================================================
-
-    START TRANSACTION;
-
-    -- First ARV dispensation per patient
+    -- Première dispensation ARV par patient
     DROP TEMPORARY TABLE IF EXISTS tmp_first_arv_dispensation;
     CREATE TEMPORARY TABLE tmp_first_arv_dispensation (
         patient_id INT NOT NULL,
@@ -1255,7 +1119,7 @@ BEGIN
       AND pdis.voided <> 1
     GROUP BY pdis.patient_id;
 
-    -- Patients with viral load results
+    -- Patients ayant des résultats de charge virale
     DROP TEMPORARY TABLE IF EXISTS tmp_patients_with_viral_load;
     CREATE TEMPORARY TABLE tmp_patients_with_viral_load (
         patient_id INT NOT NULL,
@@ -1269,17 +1133,9 @@ BEGIN
       AND pl.test_result IS NOT NULL
       AND pl.test_result <> '';
 
-    -- Patients on ARV
-    DROP TEMPORARY TABLE IF EXISTS tmp_patients_on_arv;
-    CREATE TEMPORARY TABLE tmp_patients_on_arv (
-        patient_id INT NOT NULL,
-        PRIMARY KEY (patient_id)
-    ) ENGINE=MEMORY
-    SELECT patient_id FROM isanteplus.patient_on_arv;
-
-    -- Latest dispensation date per patient
-    DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation;
-    CREATE TEMPORARY TABLE tmp_latest_dispensation (
+    -- Dernière date de dispensation par patient (exclut prophylaxie)
+    DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation_no_prophy;
+    CREATE TEMPORARY TABLE tmp_latest_dispensation_no_prophy (
         patient_id INT NOT NULL,
         next_dispensation_date DATE,
         PRIMARY KEY (patient_id)
@@ -1293,7 +1149,7 @@ BEGIN
       AND pd.voided <> 1
     GROUP BY pd.patient_id;
 
-    -- Latest viral load test date per patient
+    -- Dernière date de test de charge virale par patient
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_viral_load;
     CREATE TEMPORARY TABLE tmp_latest_viral_load (
         patient_id INT NOT NULL,
@@ -1309,7 +1165,7 @@ BEGIN
       AND pl.voided <> 1
     GROUP BY pl.patient_id;
 
-    -- Latest dispensing visit date per patient
+    -- Dernière date de visite de dispensation par patient
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensing_visit;
     CREATE TEMPORARY TABLE tmp_latest_dispensing_visit (
         patient_id INT NOT NULL,
@@ -1323,7 +1179,7 @@ BEGIN
     WHERE pdi.voided <> 1
     GROUP BY pdi.patient_id;
 
-    -- Patients with INH prophylaxis (now using snapshot)
+    -- Patients sous prophylaxie INH (utilise la copie snapshot)
     DROP TEMPORARY TABLE IF EXISTS tmp_patients_with_inh;
     CREATE TEMPORARY TABLE tmp_patients_with_inh (
         patient_id INT NOT NULL,
@@ -1341,16 +1197,15 @@ BEGIN
     COMMIT;
 
     -- =========================================================================
-    -- PHASE 3: WRITE TO ISANTEPLUS TABLES (NORMAL ISOLATION)
+    -- PHASE 3 : ÉCRITURE DANS LES TABLES ISANTEPLUS
     -- =========================================================================
 
-    SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
     START TRANSACTION;
 
     TRUNCATE TABLE alert;
 
     -- -------------------------------------------------------------------------
-    -- Alert 1: Patient on ARV >= 6 months without viral load result
+    -- Alerte 1 : Patient sous ARV >= 6 mois sans résultat de charge virale
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1362,7 +1217,7 @@ BEGIN
     FROM isanteplus.patient p
     INNER JOIN tmp_first_arv_dispensation B ON p.patient_id = B.patient_id
     LEFT JOIN tmp_patients_with_viral_load vl ON p.patient_id = vl.patient_id
-    LEFT JOIN tmp_discontinued_patients disc ON p.patient_id = disc.patient_id
+    LEFT JOIN tmp_disc_patients_by_encounter disc ON p.patient_id = disc.patient_id
     WHERE p.date_started_arv = B.visit_date
       AND TIMESTAMPDIFF(MONTH, p.date_started_arv, CURDATE()) >= 6
       AND vl.patient_id IS NULL
@@ -1370,7 +1225,7 @@ BEGIN
       AND p.vih_status = 1;
 
     -- -------------------------------------------------------------------------
-    -- Alert 2: Patient on ARV = 5 months without viral load result
+    -- Alerte 2 : Patient sous ARV = 5 mois sans résultat de charge virale
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1390,7 +1245,7 @@ BEGIN
       AND p.vih_status = 1;
 
     -- -------------------------------------------------------------------------
-    -- Alert 3: Pregnant woman on ARV >= 4 months without viral load result
+    -- Alerte 3 : Femme enceinte sous ARV >= 4 mois sans résultat de charge virale
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1403,7 +1258,7 @@ BEGIN
     INNER JOIN tmp_first_arv_dispensation B ON p.patient_id = B.patient_id
     INNER JOIN isanteplus.patient_pregnancy pp ON p.patient_id = pp.patient_id
     LEFT JOIN tmp_patients_with_viral_load vl ON p.patient_id = vl.patient_id
-    LEFT JOIN tmp_discontinued_patients disc ON p.patient_id = disc.patient_id
+    LEFT JOIN tmp_disc_patients_by_encounter disc ON p.patient_id = disc.patient_id
     WHERE p.date_started_arv = B.visit_date
       AND TIMESTAMPDIFF(MONTH, p.date_started_arv, CURDATE()) >= 4
       AND vl.patient_id IS NULL
@@ -1411,7 +1266,7 @@ BEGIN
       AND p.vih_status = 1;
 
     -- -------------------------------------------------------------------------
-    -- Alert 4: Last viral load >= 12 months ago (suppressed)
+    -- Alerte 4 : Dernière charge virale >= 12 mois (supprimée)
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1432,8 +1287,7 @@ BEGIN
       AND p.vih_status = 1;
 
     -- -------------------------------------------------------------------------
-    -- Alert 5: Last viral load >= 3 months ago with result > 1000 copies/ml
-    -- (Using snapshot instead of openmrs.obs directly)
+    -- Alerte 5 : Dernière charge virale >= 3 mois avec résultat > 1000 copies/ml
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1452,7 +1306,7 @@ BEGIN
       AND p.arv_status NOT IN (1, 2, 3);
 
     -- -------------------------------------------------------------------------
-    -- Alert 6: Last viral load > 1000 copies/ml
+    -- Alerte 6 : Dernière charge virale > 1000 copies/ml
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1474,7 +1328,7 @@ BEGIN
         GROUP BY pl.patient_id
     ) C ON plab.patient_id = C.patient_id
     INNER JOIN tmp_patients_on_arv parv ON p.patient_id = parv.patient_id
-    LEFT JOIN tmp_discontinued_patients disc ON p.patient_id = disc.patient_id
+    LEFT JOIN tmp_disc_patients_by_encounter disc ON p.patient_id = disc.patient_id
     WHERE IFNULL(DATE(plab.date_test_done), DATE(plab.visit_date)) = C.visit_date
       AND plab.test_id = 856
       AND plab.test_result > 1000
@@ -1482,7 +1336,7 @@ BEGIN
       AND p.vih_status = 1;
 
     -- -------------------------------------------------------------------------
-    -- Alert 7: Patient must refill ARV within 30 days
+    -- Alerte 7 : Patient doit renouveler ses ARV dans les 30 jours
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1493,14 +1347,14 @@ BEGIN
         NOW()
     FROM isanteplus.patient p
     INNER JOIN isanteplus.patient_dispensing pdisp ON p.patient_id = pdisp.patient_id
-    INNER JOIN tmp_latest_dispensation B
+    INNER JOIN tmp_latest_dispensation_no_prophy B
         ON pdisp.patient_id = B.patient_id
        AND pdisp.next_dispensation_date = B.next_dispensation_date
     WHERE DATEDIFF(pdisp.next_dispensation_date, CURDATE()) BETWEEN 0 AND 30
       AND p.arv_status NOT IN (1, 2, 3);
 
     -- -------------------------------------------------------------------------
-    -- Alert 8: Patient has no more medications available
+    -- Alerte 8 : Patient n'a plus de médicaments disponibles
     -- -------------------------------------------------------------------------
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
@@ -1511,7 +1365,7 @@ BEGIN
         NOW()
     FROM isanteplus.patient p
     INNER JOIN isanteplus.patient_dispensing pdisp ON p.patient_id = pdisp.patient_id
-    INNER JOIN tmp_latest_dispensation B
+    INNER JOIN tmp_latest_dispensation_no_prophy B
         ON pdisp.patient_id = B.patient_id
        AND pdisp.next_dispensation_date = B.next_dispensation_date
     WHERE DATEDIFF(B.next_dispensation_date, CURDATE()) < 0
@@ -1520,11 +1374,11 @@ BEGIN
     COMMIT;
 
     -- -------------------------------------------------------------------------
-    -- Alert 9: TB/HIV co-infection (separate transaction)
+    -- Alerte 9 : Co-infection TB/VIH (transaction séparée)
     -- -------------------------------------------------------------------------
     START TRANSACTION;
 
-    -- TB/HIV from dispensing form
+    -- TB/VIH à partir du formulaire de dispensation
     DROP TABLE IF EXISTS traitement_tuberculeux;
     CREATE TABLE traitement_tuberculeux (
         patient_id INT NOT NULL,
@@ -1551,7 +1405,7 @@ BEGIN
       AND pd.drug_id = 78280
       AND pd.voided <> 1;
 
-    -- Rifampicin
+    -- Rifampicine
     INSERT INTO traitement_tuberculeux(patient_id, id_alert, encounter_id, drug_id, visit_date, last_updated_date)
     SELECT DISTINCT
         pd.patient_id,
@@ -1568,7 +1422,7 @@ BEGIN
     WHERE pd.drug_id = 767
       AND pd.voided <> 1;
 
-    -- Insert alert for patients with both drugs
+    -- Insérer l'alerte pour les patients ayant les deux médicaments
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
         tb.patient_id,
@@ -1591,7 +1445,7 @@ BEGIN
     COMMIT;
 
     -- -------------------------------------------------------------------------
-    -- Alert 9: TB/HIV from HIV visit forms (separate transaction)
+    -- Alerte 9 : TB/VIH à partir des formulaires de visite VIH (transaction séparée)
     -- -------------------------------------------------------------------------
     START TRANSACTION;
 
@@ -1608,7 +1462,7 @@ BEGIN
     WHERE en.encounter_type IN (@et_first_visit, @et_followup, @et_pediatric, @et_pediatric_followup)
     GROUP BY en.patient_id;
 
-    -- Isoniazid from HIV forms (using snapshots)
+    -- Isoniazide à partir des formulaires VIH (utilise les copies snapshot)
     CREATE TABLE traitement_tuberculeux (
         patient_id INT NOT NULL,
         id_alert INT,
@@ -1638,7 +1492,7 @@ BEGIN
       AND o2.concept_id = 159367
       AND o2.value_coded = 1065;
 
-    -- Rifampicin from HIV forms
+    -- Rifampicine à partir des formulaires VIH
     INSERT INTO traitement_tuberculeux(patient_id, id_alert, encounter_id, drug_id, visit_date, last_updated_date)
     SELECT DISTINCT
         o.person_id AS patient_id,
@@ -1660,7 +1514,7 @@ BEGIN
       AND o2.concept_id = 159367
       AND o2.value_coded = 1065;
 
-    -- Insert alert for patients with both drugs from HIV forms
+    -- Insérer l'alerte pour les patients ayant les deux médicaments (formulaires VIH)
     INSERT INTO alert(patient_id, id_alert, encounter_id, date_alert, last_updated_date)
     SELECT DISTINCT
         tb.patient_id,
@@ -1684,7 +1538,7 @@ BEGIN
     COMMIT;
 
     -- -------------------------------------------------------------------------
-    -- Alert 10: Patient on ARV >= 3 months without viral load result
+    -- Alerte 10 : Patient sous ARV >= 3 mois sans résultat de charge virale
     -- -------------------------------------------------------------------------
     START TRANSACTION;
 
@@ -1732,7 +1586,7 @@ BEGIN
     COMMIT;
 
     -- -------------------------------------------------------------------------
-    -- Alert 11: Patient on ARV without INH prophylaxis
+    -- Alerte 11 : Patient sous ARV sans prophylaxie INH
     -- -------------------------------------------------------------------------
     START TRANSACTION;
 
@@ -1755,7 +1609,7 @@ BEGIN
     COMMIT;
 
     -- -------------------------------------------------------------------------
-    -- Alert 12: DDP subscription (using snapshot)
+    -- Alerte 12 : Abonnement DDP (utilise la copie snapshot)
     -- -------------------------------------------------------------------------
     START TRANSACTION;
 
@@ -1772,298 +1626,30 @@ BEGIN
 
     COMMIT;
 
-    -- =========================================================================
-    -- CLEANUP
-    -- =========================================================================
+    -- Section 3 cleanup (tables locales uniquement)
     DROP TEMPORARY TABLE IF EXISTS tmp_first_arv_dispensation;
     DROP TEMPORARY TABLE IF EXISTS tmp_patients_with_viral_load;
-    DROP TEMPORARY TABLE IF EXISTS tmp_patients_on_arv;
-    DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation;
+    DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensation_no_prophy;
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_viral_load;
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_obs_viral_load;
     DROP TEMPORARY TABLE IF EXISTS tmp_latest_dispensing_visit;
-    DROP TEMPORARY TABLE IF EXISTS tmp_discontinued_patients;
+    DROP TEMPORARY TABLE IF EXISTS tmp_disc_patients_by_encounter;
     DROP TEMPORARY TABLE IF EXISTS tmp_any_discontinuation;
     DROP TEMPORARY TABLE IF EXISTS tmp_patients_with_inh;
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
-    DROP TEMPORARY TABLE IF EXISTS tmp_obs_group_snapshot;
-    DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
-
-END$$
-DELIMITER ;
 
 -- =============================================================================
--- isanteplus_patient_alert
+-- SECTION 4 : isanteplus_patient_immunization
 --
--- Configures the OpenMRS Patient Flags module with alert definitions.
--- Maps isanteplus.alert table entries to patient flag displays.
+-- Synchronise les données de vaccination de openmrs.obs vers les tables
+-- isanteplus. Extrait le type de vaccin, le numéro de dose et la date
+-- à partir des groupes obs. Pivote les données de dose en colonnes
+-- dans la table immunization_dose.
 -- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS isanteplus_patient_alert$$
-CREATE PROCEDURE isanteplus_patient_alert()
-BEGIN
-    SET SQL_SAFE_UPDATES = 0;
-    SET FOREIGN_KEY_CHECKS = 0;
 
     -- =========================================================================
-    -- Clear existing flag configuration
-    -- =========================================================================
-    TRUNCATE TABLE openmrs.patientflags_flag_tag;
-    TRUNCATE TABLE openmrs.patientflags_tag_displaypoint;
-    TRUNCATE TABLE openmrs.patientflags_flag;
-    TRUNCATE TABLE openmrs.patientflags_tag;
-    TRUNCATE TABLE openmrs.patientflags_priority;
-
-    SET SQL_SAFE_UPDATES = 1;
-    SET FOREIGN_KEY_CHECKS = 1;
-
-    -- =========================================================================
-    -- Create tag for alerts
-    -- =========================================================================
-    INSERT INTO openmrs.patientflags_tag VALUES (
-        2,                                          -- tag_id
-        'Tag',                                      -- name
-        NULL,                                       -- description
-        1,                                          -- creator
-        '2018-05-28 09:44:50',                      -- date_created
-        NULL, NULL, 0, NULL, NULL, NULL,
-        '4dbe134d-a67a-44be-871f-5890b05d328c'      -- uuid
-    );
-
-    -- =========================================================================
-    -- Create priority levels
-    -- =========================================================================
-    -- Priority 1: Viral Load alerts (red)
-    INSERT INTO openmrs.patientflags_priority VALUES (
-        1, 'Liste VL', 'color:red', 1, NULL,
-        1, '2018-05-28 02:17:38', 1, '2018-05-28 02:19:27',
-        0, NULL, NULL, NULL,
-        'f2e0e461-170e-4df9-80fc-da2d93663328'
-    );
-
-    -- Priority 2: Medication alerts (red)
-    INSERT INTO openmrs.patientflags_priority VALUES (
-        2, 'Liste Medicament', 'color: red', 2, NULL,
-        1, '2018-05-31 15:02:47', NULL, NULL,
-        0, NULL, NULL, NULL,
-        '5d87ef2b-5cc2-4ef5-a241-a122977170d6'
-    );
-
-    -- Priority 3: TB alerts (blue)
-    INSERT INTO openmrs.patientflags_priority VALUES (
-        3, 'Liste TB', 'color: blue', 3, NULL,
-        1, '2018-05-31 15:02:47', NULL, NULL,
-        0, NULL, NULL, NULL,
-        '439d2dfa-29ee-4271-9e18-97a80d0eb475'
-    );
-
-    -- =========================================================================
-    -- Create flag definitions
-    -- =========================================================================
-
-    -- Flag 2: Last viral load >= 12 months ago
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        2,
-        'Dernière charge virale de ce patient remonte à 12 mois ou plus',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 4',
-        'Dernière charge virale de ce patient remonte à 12 mois ou plus',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2018-05-28 02:18:18', 1, '2018-05-31 13:43:43',
-        0, NULL, NULL, NULL,
-        '8c176fcb-9354-43fa-b13c-c293e6f910dc',
-        1  -- priority_id (VL)
-    );
-
-    -- Flag 4: TB/HIV co-infection
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        4,
-        'Coïnfection TB/VIH',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 9',
-        'Coïnfection TB/VIH',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2018-05-31 15:03:40', NULL, NULL,
-        0, NULL, NULL, NULL,
-        'a1d4c4ba-348c-456d-aca1-755190b78b0c',
-        3  -- priority_id (TB)
-    );
-
-    -- Flag 5: Last viral load >= 3 months ago with > 1000 copies/ml
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        5,
-        'Le patient a au moins 3 mois de sa dernière charge virale supérieur à 1000 copies/ml',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 5',
-        'Le patient a au moins 3 mois de sa dernière charge virale supérieur à 1000 copies/ml',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2018-05-28 02:18:18', 1, '2018-05-31 13:43:43',
-        0, NULL, NULL, NULL,
-        '8c176fcb-9354-43fa-b13c-c293e6f910dc',
-        1  -- priority_id (VL)
-    );
-
-    -- Flag 7: Patient must refill ARV within 30 days
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        7,
-        'Le patient doit venir renflouer ses ARV dans les 30 prochains jours',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 7',
-        'Le patient doit venir renflouer ses ARV dans les 30 prochains jours',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2018-05-28 02:18:18', 1, '2018-05-31 13:43:43',
-        0, NULL, NULL, NULL,
-        '8c176fcb-9354-43fa-b13c-c293e6f910dc',
-        2  -- priority_id (Medication)
-    );
-
-    -- Flag 8: Patient has no more medications available
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        8,
-        'Le patient n\'a plus de médicaments disponibles',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 8',
-        'Le patient n\'a plus de médicaments disponibles',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2018-05-28 02:18:18', 1, '2018-05-31 13:43:43',
-        0, NULL, NULL, NULL,
-        '8c176fcb-9354-43fa-b13c-c293e6f910dc',
-        2  -- priority_id (Medication)
-    );
-
-    -- Flag 9: Patient on ARV >= 3 months without viral load
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        9,
-        'Patient sous ARV depuis au moins 3 mois sans un résultat de charge virale',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 10',
-        'Patient sous ARV depuis au moins 3 mois sans un résultat de charge virale',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2020-02-05 14:58:13', 1, '2020-02-05 14:59:31',
-        0, NULL, NULL, NULL,
-        'c874aaf5-9e64-4fca-ba49-3f903158fa5f',
-        1  -- priority_id (VL)
-    );
-
-    -- Flag 10: New ARV patient without INH prophylaxis
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        10,
-        'Nouveau enrôlé aux ARV sans prophylaxie INH',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 11',
-        'Nouveau enrôlé aux ARV sans prophylaxie INH',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2020-02-05 02:18:18', 1, '2020-02-05 13:43:43',
-        0, NULL, NULL, NULL,
-        'c26c358d-ec66-4588-8546-e39511723ded',
-        2  -- priority_id (Medication)
-    );
-
-    -- Flag 11: Patient subscribed to DDP
-    INSERT INTO openmrs.patientflags_flag VALUES (
-        11,
-        'Ce patient est abonné au DDP',
-        'select distinct a.patient_id FROM isanteplus.alert a WHERE a.id_alert = 12',
-        'Ce patient est abonné au DDP',
-        1, 'org.openmrs.module.patientflags.evaluator.SQLFlagEvaluator',
-        NULL, 1, '2021-08-02 13:18:18', 1, '2021-08-02 13:18:18',
-        0, NULL, NULL, NULL,
-        '38125986-383c-4426-b825-87dc0effa6de',
-        2  -- priority_id (Medication)
-    );
-
-    -- =========================================================================
-    -- Associate flags with tags
-    -- =========================================================================
-    INSERT INTO openmrs.patientflags_flag_tag VALUES
-        (2, 2), (4, 2), (5, 2), (7, 2), (8, 2), (9, 2), (10, 2), (11, 2);
-
-    -- =========================================================================
-    -- Set tag display point
-    -- =========================================================================
-    INSERT INTO openmrs.patientflags_tag_displaypoint VALUES (2, 1);
-
-    -- =========================================================================
-    -- Configure global properties for alert display location
-    -- =========================================================================
-    UPDATE openmrs.global_property
-    SET property_value = 'false'
-    WHERE property = 'patientflags.patientHeaderDisplay';
-
-    UPDATE openmrs.global_property
-    SET property_value = 'true'
-    WHERE property = 'patientflags.patientOverviewDisplay';
-
-END$$
-DELIMITER ;
-
--- =============================================================================
--- role_alert
---
--- Configures which roles can see patient flags/alerts.
--- Associates tag_id 2 with all standard OpenMRS roles.
--- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS role_alert$$
-CREATE PROCEDURE role_alert()
-BEGIN
-    SET SQL_SAFE_UPDATES = 0;
-    SET FOREIGN_KEY_CHECKS = 0;
-
-    TRUNCATE TABLE openmrs.patientflags_tag_role;
-
-    -- =========================================================================
-    -- Grant tag visibility to all roles
-    -- =========================================================================
-    INSERT INTO openmrs.patientflags_tag_role (tag_id, role) VALUES
-        (2, 'Anonymous'),
-        (2, 'Application: Administers System'),
-        (2, 'Application: Configures Appointment Scheduling'),
-        (2, 'Application: Configures Forms'),
-        (2, 'Application: Configures Metadata'),
-        (2, 'Application: Edits Existing Encounters'),
-        (2, 'Application: Enters ADT Events'),
-        (2, 'Application: Enters Vitals'),
-        (2, 'Application: Has Super User Privileges'),
-        (2, 'Application: Manages Atlas'),
-        (2, 'Application: Manages Provider Schedules'),
-        (2, 'Application: Records Allergies'),
-        (2, 'Application: Registers Patients'),
-        (2, 'Application: Requests Appointments'),
-        (2, 'Application: Schedules And Overbooks Appointments'),
-        (2, 'Application: Schedules Appointments'),
-        (2, 'Application: Sees Appointment Schedule'),
-        (2, 'Application: Uses Capture Vitals App'),
-        (2, 'Application: Uses Patient Summary'),
-        (2, 'Application: View Reports'),
-        (2, 'Application: Writes Clinical Notes'),
-        (2, 'Authenticated'),
-        (2, 'Organizational: Doctor'),
-        (2, 'Organizational: Hospital Administrator'),
-        (2, 'Organizational: Nurse'),
-        (2, 'Organizational: Registration Clerk'),
-        (2, 'Organizational: System Administrator'),
-        (2, 'Privilege Level: Full'),
-        (2, 'Provider'),
-        (2, 'System Developer');
-
-    SET SQL_SAFE_UPDATES = 1;
-    SET FOREIGN_KEY_CHECKS = 1;
-
-END$$
-DELIMITER ;
-
--- =============================================================================
--- isanteplus_patient_immunization
---
--- Syncs immunization data from openmrs.obs to isanteplus tables.
--- Extracts vaccine type, dose number, and date from obs groups.
--- Pivots dose data into immunization_dose table columns.
--- =============================================================================
-DELIMITER $$
-DROP PROCEDURE IF EXISTS isanteplus_patient_immunization$$
-CREATE PROCEDURE isanteplus_patient_immunization()
-BEGIN
-    SET SQL_SAFE_UPDATES = 0;
-
-    -- =========================================================================
-    -- Extract immunization records from obs groups
-    -- Concept 1421 = Immunization history construct (group)
-    -- Concept 984 = Immunization given (answer)
+    -- Extraction des enregistrements de vaccination à partir des groupes obs
+    -- Concept 1421 = Historique de vaccination (groupe)
+    -- Concept 984 = Vaccination administrée (réponse)
     -- =========================================================================
     INSERT INTO isanteplus.patient_immunization (
         patient_id, location_id, encounter_id, vaccine_obs_group_id,
@@ -2081,14 +1667,14 @@ BEGIN
     FROM openmrs.obs ob
     INNER JOIN openmrs.obs o ON ob.obs_id = o.obs_group_id
     INNER JOIN openmrs.concept c ON o.value_coded = c.concept_id
-    WHERE o.concept_id = 984      -- Immunization given
-      AND ob.concept_id = 1421    -- Immunization history construct
+    WHERE o.concept_id = 984      -- Vaccination administrée
+      AND ob.concept_id = 1421    -- Historique de vaccination
     ON DUPLICATE KEY UPDATE
         voided = o.voided;
 
     -- =========================================================================
-    -- Update dose number from obs group
-    -- Concept 1418 = Immunization sequence number
+    -- Mise à jour du numéro de dose à partir du groupe obs
+    -- Concept 1418 = Numéro de séquence de vaccination
     -- =========================================================================
     UPDATE isanteplus.patient_immunization pim
     INNER JOIN openmrs.obs o ON pim.vaccine_obs_group_id = o.obs_group_id
@@ -2096,8 +1682,8 @@ BEGIN
     WHERE o.concept_id = 1418;
 
     -- =========================================================================
-    -- Update vaccine date from obs group
-    -- Concept 1410 = Date immunization given
+    -- Mise à jour de la date de vaccination à partir du groupe obs
+    -- Concept 1410 = Date de vaccination administrée
     -- =========================================================================
     UPDATE isanteplus.patient_immunization pim
     INNER JOIN openmrs.obs o ON pim.vaccine_obs_group_id = o.obs_group_id
@@ -2105,12 +1691,12 @@ BEGIN
     WHERE o.concept_id = 1410;
 
     -- =========================================================================
-    -- Pivot dose data into immunization_dose table
-    -- Creates one row per patient/vaccine with columns for each dose date
+    -- Pivotage des données de dose dans la table immunization_dose
+    -- Crée une ligne par patient/vaccin avec des colonnes pour chaque date de dose
     -- =========================================================================
     TRUNCATE TABLE immunization_dose;
 
-    -- Insert unique patient/vaccine combinations
+    -- Insérer les combinaisons patient/vaccin uniques
     INSERT INTO immunization_dose (patient_id, vaccine_concept_id)
     SELECT DISTINCT pati.patient_id, pati.vaccine_concept_id
     FROM patient_immunization pati
@@ -2118,7 +1704,7 @@ BEGIN
     ON DUPLICATE KEY UPDATE
         vaccine_concept_id = pati.vaccine_concept_id;
 
-    -- Update dose0
+    -- Mise à jour dose0
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2127,7 +1713,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 0
       AND pati.voided <> 1;
 
-    -- Update dose1
+    -- Mise à jour dose1
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2136,7 +1722,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 1
       AND pati.voided <> 1;
 
-    -- Update dose2
+    -- Mise à jour dose2
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2145,7 +1731,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 2
       AND pati.voided <> 1;
 
-    -- Update dose3
+    -- Mise à jour dose3
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2154,7 +1740,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 3
       AND pati.voided <> 1;
 
-    -- Update dose4
+    -- Mise à jour dose4
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2163,7 +1749,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 4
       AND pati.voided <> 1;
 
-    -- Update dose5
+    -- Mise à jour dose5
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2172,7 +1758,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 5
       AND pati.voided <> 1;
 
-    -- Update dose6
+    -- Mise à jour dose6
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2181,7 +1767,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 6
       AND pati.voided <> 1;
 
-    -- Update dose7
+    -- Mise à jour dose7
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2190,7 +1776,7 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 7
       AND pati.voided <> 1;
 
-    -- Update dose8
+    -- Mise à jour dose8
     UPDATE immunization_dose idose
     INNER JOIN patient_immunization pati
         ON idose.patient_id = pati.patient_id
@@ -2199,71 +1785,14 @@ BEGIN
     WHERE CONVERT(pati.dose, SIGNED INTEGER) = 8
       AND pati.voided <> 1;
 
-    SET SQL_SAFE_UPDATES = 1;
+-- =============================================================================
+-- NETTOYAGE GLOBAL
+-- =============================================================================
+DROP TEMPORARY TABLE IF EXISTS tmp_latest_visit;
+DROP TEMPORARY TABLE IF EXISTS tmp_patients_on_arv;
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot;
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_snapshot_2;
+DROP TEMPORARY TABLE IF EXISTS tmp_obs_group_snapshot;
+DROP TEMPORARY TABLE IF EXISTS tmp_encounter_snapshot;
 
-END$$
-DELIMITER ;
-
--- =============================================================================
--- calling_arv_status_and_regimen
---
--- Orchestrates the procedures that update the patient's ARV status and regimen.
--- This procedure exists to simplify the definition of the scheduled event.
--- =============================================================================
-DELIMITER $$
-	DROP PROCEDURE IF EXISTS calling_arv_status_and_regimen$$
-	CREATE PROCEDURE calling_arv_status_and_regimen()
-	BEGIN
-		call patient_status_arv();
-		call isanteplusregimen_dml();
-	END$$
-DELIMITER ;
-
--- =============================================================================
--- calling_patient_alert
---
--- This procedure orchestrates the procedures that generate patient alerts
--- so that they are called in the correct order. It's used to simplify the
--- definition of the EVENT that triggers these procedures.
--- =============================================================================
-DELIMITER $$
-	DROP PROCEDURE IF EXISTS calling_patient_alert$$
-	CREATE PROCEDURE calling_patient_alert()
-	BEGIN
-		call isanteplus_patient_alert();
-		call alert_viral_load();
-		call isanteplus_patient_immunization();
-	END$$
-DELIMITER ;
-
--- =============================================================================
--- patient_status_arv_event
---
--- This event is triggered every hour and updates patients ARV status and
--- current regimen
--- =============================================================================
-DROP EVENT if exists patient_status_arv_event;
-CREATE EVENT if not exists patient_status_arv_event
-ON SCHEDULE EVERY 1 HOUR
- STARTS now()
-	DO
-	call calling_arv_status_and_regimen();
-
--- =============================================================================
--- isanteplus_patient_alert_event
---
--- This event is triggered every 20 minutes and generates any alerts
--- =============================================================================
-DROP EVENT if exists isanteplus_patient_alert_event;
-CREATE EVENT if not exists isanteplus_patient_alert_event
-ON SCHEDULE EVERY 20 MINUTE
- STARTS now()
-	DO
-	call calling_patient_alert();
-
--- We immediately invoke the role_alert procedure to ensure the
--- necessary metadata are preloaded
-call role_alert();
-
--- I can't find this event, but I assume this is here for historical reasons?
-DROP EVENT if exists isanteplusregimen_dml_event;
+SET SQL_SAFE_UPDATES = 1;
