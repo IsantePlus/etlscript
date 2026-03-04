@@ -1,5 +1,5 @@
 -- =============================================================================
--- Test script: Compare current (production) vs new (optimized) ETL script
+-- Test script: Compare current vs new version of patient_status_arv_dml.sql
 --
 -- This script:
 --   1. Saves current state of all affected tables
@@ -8,6 +8,10 @@
 --   4. Restores state
 --   5. Runs the new (optimized) version
 --   6. Compares results and reports differences
+--
+-- Merges comparisons from test_patient_status_arv_comparison.sql and
+-- test_alert_viral_load_comparison.sql into a single script, since the
+-- flat SQL files already define and call alert_viral_load internally.
 --
 -- PREREQUISITES:
 --   Before running this script, create two stored procedures by wrapping
@@ -71,7 +75,9 @@ CREATE TABLE _test_isanteplus_patient_arv_backup AS
 -- =============================================================================
 -- Step 2: Run the CURRENT (production) version
 -- =============================================================================
+SET @_test_current_start = NOW(6);
 CALL _test_current_version();
+SET @_test_current_end = NOW(6);
 
 -- =============================================================================
 -- Step 3: Capture results from current version
@@ -136,7 +142,9 @@ INSERT INTO openmrs.isanteplus_patient_arv SELECT * FROM _test_isanteplus_patien
 -- =============================================================================
 -- Step 5: Run the NEW (optimized) version
 -- =============================================================================
+SET @_test_new_start = NOW(6);
 CALL _test_new_version();
+SET @_test_new_end = NOW(6);
 
 -- =============================================================================
 -- Step 6: Capture results from new version
@@ -279,6 +287,22 @@ LEFT JOIN _test_current_alert o
 WHERE o.patient_id IS NULL
 LIMIT 100;
 
+-- Same patient/alert/encounter but different dates
+SELECT 'alert: DATE DIFFERENCES' AS comparison;
+SELECT
+    o.patient_id,
+    o.id_alert,
+    o.date_alert AS current_date_alert,
+    n.date_alert AS new_date_alert,
+    o.encounter_id
+FROM _test_current_alert o
+INNER JOIN _test_new_alert n
+    ON o.patient_id = n.patient_id
+   AND o.id_alert = n.id_alert
+   AND o.encounter_id = n.encounter_id
+WHERE o.date_alert <> n.date_alert
+LIMIT 100;
+
 -- Alert counts by type
 SELECT 'ALERT COUNTS BY TYPE' AS comparison;
 SELECT
@@ -331,7 +355,30 @@ LEFT JOIN _test_current_immunization_dose o
 WHERE o.patient_id IS NULL
 LIMIT 100;
 
--- ---- Summary counts ----
+-- ---- isanteplus_patient_arv ----
+
+SELECT 'isanteplus_patient_arv: in CURRENT only' AS comparison;
+SELECT o.patient_id, o.arv_drug
+FROM _test_current_isanteplus_patient_arv o
+LEFT JOIN _test_new_isanteplus_patient_arv n
+    ON o.patient_id = n.patient_id
+   AND o.arv_drug = n.arv_drug
+WHERE n.patient_id IS NULL
+LIMIT 100;
+
+SELECT 'isanteplus_patient_arv: in NEW only' AS comparison;
+SELECT n.patient_id, n.arv_drug
+FROM _test_new_isanteplus_patient_arv n
+LEFT JOIN _test_current_isanteplus_patient_arv o
+    ON n.patient_id = o.patient_id
+   AND n.arv_drug = o.arv_drug
+WHERE o.patient_id IS NULL
+LIMIT 100;
+
+
+-- =============================================================================
+-- SUMMARY COUNTS
+-- =============================================================================
 
 SELECT 'SUMMARY COUNTS' AS comparison;
 SELECT
@@ -367,7 +414,44 @@ UNION ALL
 SELECT
     'immunization_dose',
     (SELECT COUNT(*) FROM _test_current_immunization_dose),
-    (SELECT COUNT(*) FROM _test_new_immunization_dose);
+    (SELECT COUNT(*) FROM _test_new_immunization_dose)
+UNION ALL
+SELECT
+    'isanteplus_patient_arv',
+    (SELECT COUNT(*) FROM _test_current_isanteplus_patient_arv),
+    (SELECT COUNT(*) FROM _test_new_isanteplus_patient_arv);
+
+
+-- =============================================================================
+-- EXECUTION TIMING
+-- =============================================================================
+
+SELECT 'EXECUTION TIMING' AS comparison;
+SELECT
+    TIMESTAMPDIFF(MICROSECOND, @_test_current_start, @_test_current_end) / 1000000.0 AS current_seconds,
+    TIMESTAMPDIFF(MICROSECOND, @_test_new_start, @_test_new_end) / 1000000.0 AS new_seconds,
+    TIMESTAMPDIFF(MICROSECOND, @_test_current_start, @_test_current_end) / 1000000.0
+      - TIMESTAMPDIFF(MICROSECOND, @_test_new_start, @_test_new_end) / 1000000.0 AS difference_seconds;
+
+
+-- =============================================================================
+-- ALERT TYPE LEGEND
+-- =============================================================================
+
+SELECT 'ALERT TYPE LEGEND' AS info;
+SELECT 1 AS id_alert, 'Patient on ARV >= 6 months without viral load' AS description
+UNION ALL SELECT 2, 'Patient on ARV = 5 months without viral load'
+UNION ALL SELECT 3, 'Pregnant woman on ARV >= 4 months without viral load'
+UNION ALL SELECT 4, 'Last viral load >= 12 months ago (suppressed)'
+UNION ALL SELECT 5, 'Last viral load >= 3 months ago with > 1000 copies/ml'
+UNION ALL SELECT 6, 'Last viral load > 1000 copies/ml'
+UNION ALL SELECT 7, 'Patient must refill ARV within 30 days'
+UNION ALL SELECT 8, 'Patient has no more medications available'
+UNION ALL SELECT 9, 'TB/HIV co-infection'
+UNION ALL SELECT 10, 'Patient on ARV >= 3 months without viral load'
+UNION ALL SELECT 11, 'Patient on ARV without INH prophylaxis'
+UNION ALL SELECT 12, 'DDP subscription';
+
 
 -- =============================================================================
 -- CLEANUP (uncomment when done testing)

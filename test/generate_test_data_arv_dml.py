@@ -68,6 +68,16 @@ ENCOUNTER_TYPES = {
     'adherence_counseling': 'e8a2b0c1-7d6f-4a3e-9b5c-2f1d8e7a6b4c',
 }
 
+# Encounter types NOT processed by the ETL (noise data for filter testing)
+NOISE_ENCOUNTER_TYPES = {
+    'registration':       'aaaaaaaa-0000-0000-0000-000000000001',
+    'vitals':             'aaaaaaaa-0000-0000-0000-000000000002',
+    'general_consult':    'aaaaaaaa-0000-0000-0000-000000000003',
+}
+
+# Concept IDs that don't appear in the ETL's filtered concept list
+NOISE_CONCEPT_IDS = [999901, 999902, 999903, 999904, 999905]
+
 # Concept UUIDs for specific lookups
 CONCEPT_UUIDS = {
     'isoniazid_group': 'fee8bd39-2a95-47f9-b1f5-3f9e9b3ee959',
@@ -199,6 +209,8 @@ class GeneratorConfig:
     pct_pediatric: float = 0.15       # 15% are pediatric patients
     pct_exposed_infant: float = 0.03  # 3% are exposed infants
     pct_tb_coinfection: float = 0.05  # 5% of ARV patients have TB co-infection
+    pct_noise: float = 0.05           # fraction of patients that are pure noise
+    pct_voided_visit: float = 0.10    # fraction of normal patients that get a voided visit
 
     def __post_init__(self):
         if self.start_date is None:
@@ -230,6 +242,7 @@ class Patient:
     first_visit_date: Optional[datetime] = None
     # When True, only generates non-standard encounter types (adherence_counseling)
     # and limits visits to 1. Used for status 10 (lost pre-ARV) seed patients.
+    noise: bool = False
     force_nonstandard_encounters: bool = False
     person_uuid: str = field(default_factory=_generate_uuid)
 
@@ -246,6 +259,7 @@ class Visit:
     patient_id: int
     date_started: datetime
     location_id: int
+    voided: int = 0
     encounters: List['Encounter'] = field(default_factory=list)
     uuid: str = field(default_factory=_generate_uuid)
 
@@ -259,6 +273,7 @@ class Encounter:
     encounter_type_id: int
     encounter_datetime: datetime
     location_id: int
+    voided: int = 0
     observations: List['Observation'] = field(default_factory=list)
     uuid: str = field(default_factory=_generate_uuid)
 
@@ -276,6 +291,7 @@ class Observation:
     obs_datetime: datetime = None
     obs_group_id: Optional[int] = None
     location_id: int = 1
+    voided: int = 0
     uuid: str = field(default_factory=_generate_uuid)
 
 
@@ -312,6 +328,7 @@ class TestDataGenerator:
         self.config = config
         self.id_gen = IDGenerator()
         self.encounter_type_ids: Dict[str, int] = {}
+        self.noise_encounter_type_ids: Dict[str, int] = {}
         self.encounter_type_names: Dict[int, str] = {}
         self.concept_ids: Dict[str, int] = {}
 
@@ -355,6 +372,17 @@ class TestDataGenerator:
         for name, uid in ENCOUNTER_TYPES.items():
             type_id = self.id_gen.next('encounter_type')
             self.encounter_type_ids[name] = type_id
+            self.encounter_type_names[type_id] = name
+            enc_types.append({
+                'encounter_type_id': type_id,
+                'name': name.replace('_', ' ').title(),
+                'uuid': uid,
+                'creator': 1,
+                'date_created': self.config.start_date,
+            })
+        for name, uid in NOISE_ENCOUNTER_TYPES.items():
+            type_id = self.id_gen.next('encounter_type')
+            self.noise_encounter_type_ids[name] = type_id
             self.encounter_type_names[type_id] = name
             enc_types.append({
                 'encounter_type_id': type_id,
@@ -457,6 +485,35 @@ class TestDataGenerator:
             location_id=location_id,
         )
 
+    def _generate_noise_patient(self) -> Patient:
+        """Create a patient whose encounters/obs use only noise types and concepts."""
+        patient = self._generate_patient()
+        patient.noise = True
+        return patient
+
+    def _generate_noise_observations(
+        self, encounter: Encounter, patient: Patient
+    ) -> List[Observation]:
+        """Generate observations using only noise concept IDs."""
+        observations = []
+        num_obs = random.randint(2, 5)
+        for _ in range(num_obs):
+            concept_id = random.choice(NOISE_CONCEPT_IDS)
+            obs = Observation(
+                obs_id=self.id_gen.next('obs'),
+                person_id=patient.patient_id,
+                encounter_id=encounter.encounter_id,
+                concept_id=concept_id,
+                obs_datetime=encounter.encounter_datetime,
+                location_id=encounter.location_id,
+            )
+            if random.random() < 0.5:
+                obs.value_numeric = round(random.uniform(1, 500), 1)
+            else:
+                obs.value_coded = random.randint(1, 9999)
+            observations.append(obs)
+        return observations
+
     def _generate_visits_for_patient(self, patient: Patient) -> List[Visit]:
         """Generate visits for a patient."""
         visits = []
@@ -503,7 +560,12 @@ class TestDataGenerator:
         # Determine which encounter types to create
         encounter_types_to_create = []
 
-        if patient.force_nonstandard_encounters:
+        if patient.noise:
+            # Noise patients only get noise encounter types
+            names = list(NOISE_ENCOUNTER_TYPES.keys())
+            encounter_types_to_create = random.sample(
+                names, min(random.randint(1, 2), len(names)))
+        elif patient.force_nonstandard_encounters:
             # Only non-standard encounters for status 10 seed patients
             encounter_types_to_create.append('adherence_counseling')
         else:
@@ -540,11 +602,17 @@ class TestDataGenerator:
                 encounter_types_to_create.append('adherence_counseling')
 
         for enc_type in encounter_types_to_create:
+            if patient.noise:
+                type_id = self.noise_encounter_type_ids.get(enc_type)
+            else:
+                type_id = self.encounter_type_ids.get(enc_type)
+            if type_id is None:
+                continue
             enc = Encounter(
                 encounter_id=self.id_gen.next('encounter'),
                 visit_id=visit.visit_id,
                 patient_id=patient.patient_id,
-                encounter_type_id=self.encounter_type_ids[enc_type],
+                encounter_type_id=type_id,
                 encounter_datetime=visit.date_started,
                 location_id=visit.location_id,
             )
@@ -954,12 +1022,14 @@ class TestDataGenerator:
             for r in REGIMEN_DEFINITIONS
         ]
 
-        # Generate seed patients first to ensure coverage
+        # Generate patients: seeds + noise + random
         seed_patients = self._generate_seed_patients()
-        num_random = max(0, self.config.num_patients - len(seed_patients))
-
-        # Generate random patients
-        all_patients = seed_patients + [self._generate_patient() for _ in range(num_random)]
+        num_noise = int(self.config.num_patients * self.config.pct_noise)
+        num_random = max(0, self.config.num_patients - len(seed_patients) - num_noise)
+        noise_patients = [self._generate_noise_patient() for _ in range(num_noise)]
+        all_patients = seed_patients + noise_patients + [
+            self._generate_patient() for _ in range(num_random)
+        ]
 
         for i, patient in enumerate(all_patients):
             if (i + 1) % 10000 == 0:
@@ -981,14 +1051,64 @@ class TestDataGenerator:
                 for encounter in visit.encounters:
                     enc_type_name = self.encounter_type_names.get(encounter.encounter_type_id)
                     if enc_type_name:
-                        obs = self._generate_observations_for_encounter(
-                            encounter, patient, enc_type_name
-                        )
+                        if patient.noise:
+                            obs = self._generate_noise_observations(
+                                encounter, patient)
+                        else:
+                            obs = self._generate_observations_for_encounter(
+                                encounter, patient, enc_type_name
+                            )
                         encounter.observations = obs
                         self.observations.extend(obs)
 
-            # Generate iSantePlus data
-            self._generate_isanteplus_data(patient)
+            # Add a voided visit with valid encounter types for some normal patients
+            if (not patient.noise
+                    and patient.visits
+                    and random.random() < self.config.pct_voided_visit):
+                voided_visit = Visit(
+                    visit_id=self.id_gen.next('visit'),
+                    patient_id=patient.patient_id,
+                    date_started=patient.visits[-1].date_started,
+                    location_id=patient.location_id,
+                    voided=1,
+                )
+                patient.visits.append(voided_visit)
+                self.visits.append(voided_visit)
+                voided_enc_type = random.choice(list(ENCOUNTER_TYPES.keys()))
+                voided_type_id = self.encounter_type_ids[voided_enc_type]
+                voided_enc = Encounter(
+                    encounter_id=self.id_gen.next('encounter'),
+                    visit_id=voided_visit.visit_id,
+                    patient_id=patient.patient_id,
+                    encounter_type_id=voided_type_id,
+                    encounter_datetime=voided_visit.date_started,
+                    location_id=voided_visit.location_id,
+                    voided=1,
+                )
+                voided_visit.encounters.append(voided_enc)
+                self.encounters.append(voided_enc)
+                voided_obs = []
+                for _ in range(random.randint(2, 3)):
+                    obs = Observation(
+                        obs_id=self.id_gen.next('obs'),
+                        person_id=patient.patient_id,
+                        encounter_id=voided_enc.encounter_id,
+                        concept_id=random.choice([
+                            ConceptID.VIRAL_LOAD_NUMERIC,
+                            ConceptID.HIV_TEST,
+                            ConceptID.DRUG_PRESCRIBED]),
+                        value_numeric=round(random.uniform(10, 200), 1),
+                        obs_datetime=voided_enc.encounter_datetime,
+                        location_id=voided_enc.location_id,
+                        voided=1,
+                    )
+                    voided_obs.append(obs)
+                voided_enc.observations = voided_obs
+                self.observations.extend(voided_obs)
+
+            # Generate iSantePlus data (skip for noise patients)
+            if not patient.noise:
+                self._generate_isanteplus_data(patient)
 
         print(f"Generated:")
         print(f"  - {len(self.patients)} patients")
@@ -1110,7 +1230,7 @@ class SQLWriter:
             f.write("-- Visit records\n")
             f.write("TRUNCATE TABLE visit;\n")
             rows = [
-                (v.visit_id, v.patient_id, v.date_started, v.location_id, 1, now, 0, v.uuid)
+                (v.visit_id, v.patient_id, v.date_started, v.location_id, 1, now, v.voided, v.uuid)
                 for v in self.gen.visits
             ]
             self._write_batch_insert(
@@ -1124,7 +1244,7 @@ class SQLWriter:
             f.write("TRUNCATE TABLE encounter;\n")
             rows = [
                 (e.encounter_id, e.encounter_type_id, e.patient_id, e.location_id,
-                 e.encounter_datetime, e.visit_id, 1, now, 0, e.uuid)
+                 e.encounter_datetime, e.visit_id, 1, now, e.voided, e.uuid)
                 for e in self.gen.encounters
             ]
             self._write_batch_insert(
@@ -1140,7 +1260,7 @@ class SQLWriter:
             rows = [
                 (o.obs_id, o.person_id, o.encounter_id, o.concept_id,
                  o.obs_datetime, o.location_id, o.value_coded, o.value_numeric,
-                 o.value_datetime, o.obs_group_id, 1, now, 0, o.uuid)
+                 o.value_datetime, o.obs_group_id, 1, now, o.voided, o.uuid)
                 for o in self.gen.observations
             ]
             self._write_batch_insert(
@@ -1969,7 +2089,7 @@ class DatabaseWriter:
             print("  Writing visit records...")
             cursor.execute("TRUNCATE TABLE visit")
             rows = [
-                (v.visit_id, v.patient_id, v.date_started, v.location_id, 1, now, 0, v.uuid)
+                (v.visit_id, v.patient_id, v.date_started, v.location_id, 1, now, v.voided, v.uuid)
                 for v in self.gen.visits
             ]
             self._execute_batch_insert(
@@ -1984,7 +2104,7 @@ class DatabaseWriter:
             cursor.execute("TRUNCATE TABLE encounter")
             rows = [
                 (e.encounter_id, e.encounter_type_id, e.patient_id, e.location_id,
-                 e.encounter_datetime, e.visit_id, 1, now, 0, e.uuid)
+                 e.encounter_datetime, e.visit_id, 1, now, e.voided, e.uuid)
                 for e in self.gen.encounters
             ]
             self._execute_batch_insert(
@@ -2000,7 +2120,7 @@ class DatabaseWriter:
             rows = [
                 (o.obs_id, o.person_id, o.encounter_id, o.concept_id,
                  o.obs_datetime, o.location_id, o.value_coded, o.value_numeric,
-                 o.value_datetime, o.obs_group_id, 1, now, 0, o.uuid)
+                 o.value_datetime, o.obs_group_id, 1, now, o.voided, o.uuid)
                 for o in self.gen.observations
             ]
             self._execute_batch_insert(
