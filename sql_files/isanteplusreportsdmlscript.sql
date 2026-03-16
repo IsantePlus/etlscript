@@ -12,6 +12,7 @@ SET @col_exists := (
       AND COLUMN_NAME = 'pc_id'
 );
 
+-- Construire la requête dynamiquement
 SET @sql := IF(
     @col_exists = 0,
     'ALTER TABLE isanteplus.patient ADD COLUMN pc_id VARCHAR(50);',
@@ -113,39 +114,7 @@ SET @concept_tb_bact_pos_2 := (SELECT concept_id FROM openmrs.concept WHERE uuid
 
 DROP TEMPORARY TABLE IF EXISTS _tmp_obs;
 CREATE TEMPORARY TABLE _tmp_obs AS
-SELECT * FROM openmrs.obs
-WHERE concept_id IN (
-  12, 45, 307, 309, 374, 984,
-  1030, 1040, 1042, 1054, 1061, 1109, 1110, 1111, 1113, 1169,
-  1271, 1272, 1276, 1282, 1284, 1343, 1361, 1366, 1389, 1401,
-  1418, 1427, 1438, 1439, 1440, 1442, 1443, 1444, 1542, 1572,
-  1592, 1633, 1643, 1651, 1659, 1667, 1755, 1941, 1945,
-  5085, 5086, 5089, 5090, 5096, 5314, 5596, 5599, 5632, 5665,
-  6042, 6097, 7957,
-  123160, 156660, 159368, 159398, 159431, 159599, 159614, 159758,
-  159786, 159798, 159936, 159982, 159984,
-  160040, 160079, 160082, 160090, 160112, 160117, 160168, 160265,
-  160288, 160579, 160580, 160581, 160592, 160597, 160632, 160704, 160742, 160749,
-  161007, 161555,
-  162087, 162225, 162320, 162549,
-  163258, 163276, 163278, 163283, 163284, 163515, 163540, 163541, 163544,
-  163710, 163711, 163722, 163732, 163749, 163750, 163752, 163764, 163765, 163766, 163776, 163951,
-  164432,
-  165210, 165804, 165978, 165999,
-  166134, 166136,
-  509166326,
-  @concept_breast_feeding, @concept_date_premiers_soins, @concept_ddp,
-  @concept_genexpert, @concept_key_population,
-  @concept_mdr_tb_diag_group, @concept_posology_alt, @concept_tb_diag_group,
-  @concept_viral_load_type,
-  @concept_preg_grp_1, @concept_preg_grp_2, @concept_preg_grp_3,
-  @concept_preg_grp_4, @concept_preg_grp_5, @concept_preg_grp_6,
-  @concept_preg_grp_7, @concept_preg_grp_8, @concept_preg_grp_9,
-  @concept_preg_grp_10, @concept_preg_grp_11,
-  @concept_sero_grp_1, @concept_sero_grp_2, @concept_sero_grp_3,
-  @concept_sero_grp_4, @concept_sero_grp_5, @concept_sero_grp_6,
-  @concept_viro_grp_1, @concept_viro_grp_2, @concept_viro_grp_3
-);
+SELECT * FROM openmrs.obs;
 
 DROP TEMPORARY TABLE IF EXISTS _tmp_encounter;
 CREATE TEMPORARY TABLE _tmp_encounter AS
@@ -177,11 +146,49 @@ ALTER TABLE _tmp_obs ADD INDEX idx_obs_person_id (person_id);
 ALTER TABLE _tmp_obs ADD INDEX idx_obs_concept_id (concept_id);
 ALTER TABLE _tmp_obs ADD INDEX idx_obs_obs_group_id (obs_group_id);
 ALTER TABLE _tmp_obs ADD INDEX idx_obs_obs_id (obs_id);
-ALTER TABLE _tmp_encounter ADD INDEX idx_enc_encounter_id (encounter_id);
+
+DROP TEMPORARY TABLE IF EXISTS _tmp_obs_grp;
+CREATE TEMPORARY TABLE _tmp_obs_grp AS
+SELECT * FROM openmrs.obs;
+ALTER TABLE _tmp_obs_grp ADD INDEX idx_obs_grp_encounter_id (encounter_id);
+ALTER TABLE _tmp_obs_grp ADD INDEX idx_obs_grp_person_id (person_id);
+ALTER TABLE _tmp_obs_grp ADD INDEX idx_obs_grp_concept_id (concept_id);
+ALTER TABLE _tmp_obs_grp ADD INDEX idx_obs_grp_obs_group_id (obs_group_id);
+ALTER TABLE _tmp_obs_grp ADD INDEX idx_obs_grp_obs_id (obs_id);
+
+DROP TEMPORARY TABLE IF EXISTS _tmp_obs_sib;
+CREATE TEMPORARY TABLE _tmp_obs_sib AS
+SELECT * FROM openmrs.obs
+WHERE obs_group_id IS NOT NULL;
+ALTER TABLE _tmp_obs_sib ADD INDEX idx_obs_sib_encounter_id (encounter_id);
+ALTER TABLE _tmp_obs_sib ADD INDEX idx_obs_sib_person_id (person_id);
+ALTER TABLE _tmp_obs_sib ADD INDEX idx_obs_sib_concept_id (concept_id);
+ALTER TABLE _tmp_obs_sib ADD INDEX idx_obs_sib_obs_group_id (obs_group_id);
+ALTER TABLE _tmp_obs_sib ADD INDEX idx_obs_sib_obs_id (obs_id);
+
+ALTER TABLE _tmp_encounter ADD PRIMARY KEY (encounter_id);
 ALTER TABLE _tmp_encounter ADD INDEX idx_enc_patient_id (patient_id);
 ALTER TABLE _tmp_encounter ADD INDEX idx_enc_visit_id (visit_id);
+ALTER TABLE _tmp_encounter ADD INDEX idx_enc_encounter_type (encounter_type);
+
+DROP TEMPORARY TABLE IF EXISTS _tmp_encounter_2;
+CREATE TEMPORARY TABLE _tmp_encounter_2 AS
+SELECT * FROM openmrs.encounter;
+ALTER TABLE _tmp_encounter_2 ADD PRIMARY KEY (encounter_id);
+ALTER TABLE _tmp_encounter_2 ADD INDEX idx_enc2_patient_id (patient_id);
+ALTER TABLE _tmp_encounter_2 ADD INDEX idx_enc2_visit_id (visit_id);
+ALTER TABLE _tmp_encounter_2 ADD INDEX idx_enc2_encounter_type (encounter_type);
+
 ALTER TABLE _tmp_visit ADD INDEX idx_vis_visit_id (visit_id);
 ALTER TABLE _tmp_visit ADD INDEX idx_vis_patient_id (patient_id);
+
+DROP TEMPORARY TABLE IF EXISTS _tmp_visit_2;
+CREATE TEMPORARY TABLE _tmp_visit_2 AS
+SELECT * FROM openmrs.visit;
+ALTER TABLE _tmp_visit_2 ADD INDEX idx_vis2_visit_id (visit_id);
+ALTER TABLE _tmp_visit_2 ADD INDEX idx_vis2_patient_id (patient_id);
+
+
 ALTER TABLE _tmp_encounter_provider ADD INDEX idx_ep_encounter_id (encounter_id);
 ALTER TABLE _tmp_person ADD INDEX idx_per_person_id (person_id);
 ALTER TABLE _tmp_patient ADD INDEX idx_pat_patient_id (patient_id);
@@ -351,7 +358,7 @@ SET p.occupation = po.value_coded;
 /*Update for Contact Name*/
 UPDATE patient p
 INNER JOIN _tmp_obs o ON p.patient_id = o.person_id
-INNER JOIN _tmp_obs ob ON o.person_id = ob.person_id
+INNER JOIN _tmp_obs_grp ob ON o.person_id = ob.person_id
     AND o.obs_group_id = ob.obs_id
 SET p.contact_name = o.value_text
 WHERE o.concept_id = 163258
@@ -382,7 +389,7 @@ UPDATE patient p
 INNER JOIN _tmp_visit vi ON p.patient_id = vi.patient_id
 INNER JOIN (
   SELECT v.patient_id, MIN(v.date_started) as date_started
-  FROM _tmp_visit v
+  FROM _tmp_visit_2 v
   GROUP BY v.patient_id
 ) B ON vi.patient_id = B.patient_id
     AND vi.date_started = B.date_started
@@ -394,7 +401,7 @@ UPDATE patient p
 INNER JOIN _tmp_visit vi ON p.patient_id = vi.patient_id
 INNER JOIN (
   SELECT v.patient_id, MAX(v.date_started) as date_started
-  FROM _tmp_visit v
+  FROM _tmp_visit_2 v
   GROUP BY v.patient_id
 ) B ON vi.patient_id = B.patient_id
     AND vi.date_started = B.date_started
@@ -417,9 +424,9 @@ SET p.next_visit_date = DATE(po.obsDt);
 DROP TABLE IF EXISTS patient_obs_temp;
 CREATE TEMPORARY TABLE patient_obs_temp
 SELECT o.person_id, MIN(o.obs_datetime) AS obsDt, o.value_coded
-FROM _tmp_obs ob
+FROM _tmp_obs_grp ob
   JOIN _tmp_obs o ON ob.obs_id = o.obs_group_id
-  JOIN _tmp_obs ob2 ON o.obs_group_id = ob2.obs_group_id
+  JOIN _tmp_obs_sib ob2 ON o.obs_group_id = ob2.obs_group_id
   JOIN isanteplus.arv_drugs darv ON o.value_coded = darv.drug_id
 WHERE
   ob.concept_id = 163711
@@ -509,10 +516,10 @@ SELECT DISTINCT ob.person_id,
   ob.encounter_id,ob.location_id,ob.obs_id, ob.obs_group_id,
   ob.value_coded,ob2.obs_datetime, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
-INNER JOIN _tmp_obs ob2 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob2 ON ob1.obs_id = ob2.obs_group_id
 WHERE ob1.concept_id = 163711
 AND ob.concept_id = 1282
 AND ob2.concept_id IN(1444,159368,1443,1276)
@@ -526,7 +533,7 @@ ON DUPLICATE KEY UPDATE
 /*update dispensation_date for table patient_dispensing */
 UPDATE patient_dispensing patdisp
 INNER JOIN _tmp_obs ob ON patdisp.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs o ON ob.obs_group_id = o.obs_group_id
+INNER JOIN _tmp_obs_grp o ON ob.obs_group_id = o.obs_group_id
     AND patdisp.drug_id = o.value_coded
 SET patdisp.dispensation_date = DATE(ob.obs_datetime)
 WHERE o.concept_id = 1282
@@ -549,7 +556,7 @@ WHERE enp.voided = 0;
 /*Update dose_day, pill_amount for patient_dispensing*/
 UPDATE isanteplus.patient_dispensing patdisp
 INNER JOIN _tmp_obs ob ON patdisp.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.encounter_id = ob1.encounter_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 SET patdisp.dose_day = ob.value_numeric
 WHERE ob1.concept_id = 163711
@@ -559,7 +566,7 @@ AND ob.voided = 0;
 /*Update pill_amount for patient_dispensing*/
 UPDATE isanteplus.patient_dispensing patdisp
 INNER JOIN _tmp_obs ob ON patdisp.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.encounter_id = ob1.encounter_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 SET patdisp.pills_amount = ob.value_numeric
 WHERE ob1.concept_id = 163711
@@ -598,8 +605,8 @@ UPDATE isanteplus.patient_dispensing pdisp
 INNER JOIN _tmp_obs ob2 ON pdisp.encounter_id = ob2.encounter_id
     AND pdisp.patient_id = ob2.person_id
     AND pdisp.location_id = ob2.location_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pdisp.drug_id = ob3.value_coded
 SET pdisp.rx_or_prophy = ob2.value_coded
 WHERE ob1.concept_id = 1442
@@ -658,10 +665,10 @@ SELECT DISTINCT ob.person_id,
   ob.encounter_id,ob.location_id,ob.obs_id, ob.obs_group_id,ob.value_coded,
   IF(ob1.concept_id = 163711, 1065, 1066), now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
-INNER JOIN _tmp_obs ob2 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob2 ON ob1.obs_id = ob2.obs_group_id
 WHERE (ob1.concept_id = 1442 OR ob1.concept_id = 163711)
 AND ob.concept_id = 1282
 AND ob2.concept_id IN(160742,1276,1444,159368,1443)
@@ -689,10 +696,10 @@ SELECT DISTINCT ob.person_id,
   ob.encounter_id,ob.location_id,ob.obs_id,ob.obs_group_id,
   ob.value_coded,DATE(ob2.obs_datetime), 1065, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
-INNER JOIN _tmp_obs ob2 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob2 ON ob1.obs_id = ob2.obs_group_id
 WHERE ob1.concept_id = 163711
 AND ob.concept_id = 1282
 AND ob2.concept_id IN(1276,1444,159368,1443)
@@ -738,8 +745,8 @@ AND ob.voided = 0;
 /*update rx_or_prophy for table patient_prescription*/
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.encounter_id = ob2.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pp.drug_id = ob3.value_coded
 SET pp.rx_or_prophy = ob2.value_coded
 WHERE ob1.concept_id = 1442
@@ -750,8 +757,8 @@ AND ob2.voided = 0;
 /*update posology_day for table patient_prescription*/
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.encounter_id = ob2.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pp.drug_id = ob3.value_coded
 SET pp.posology = ob2.value_text
 WHERE ob1.concept_id = 1442
@@ -762,8 +769,8 @@ AND ob2.voided = 0;
 /*Update for posology_alt */
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.encounter_id = ob2.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pp.drug_id = ob3.value_coded
 SET pp.posology_alt = ob2.value_text
 WHERE ob1.concept_id = 1442
@@ -774,8 +781,8 @@ AND ob2.voided = 0;
 /*update posology_alt_disp for table patient_prescription*/
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.encounter_id = ob2.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pp.drug_id = ob3.value_coded
 SET pp.posology_alt_disp = ob2.value_text
 WHERE ob1.concept_id = 163711
@@ -786,8 +793,8 @@ AND ob2.voided = 0;
 /*update number_day for table patient_prescription*/
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.encounter_id = ob2.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON ob1.obs_id = ob3.obs_group_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON ob1.obs_id = ob3.obs_group_id
     AND pp.drug_id = ob3.value_coded
 SET pp.number_day = ob2.value_numeric
 WHERE (ob1.concept_id = 1442 OR ob1.concept_id = 163711)
@@ -798,7 +805,7 @@ AND ob2.voided = 0;
 /*Update number_day_dispense for patient_prescription*/
 UPDATE isanteplus.patient_prescription patdisp
 INNER JOIN _tmp_obs ob ON patdisp.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.encounter_id = ob1.encounter_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 SET patdisp.number_day_dispense = ob.value_numeric
 WHERE ob1.concept_id = 163711
@@ -808,7 +815,7 @@ AND ob.voided = 0;
 /*Update pills_amount_dispense for patient_prescription*/
 UPDATE isanteplus.patient_prescription patdisp
 INNER JOIN _tmp_obs ob ON patdisp.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.encounter_id = ob1.encounter_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 SET patdisp.pills_amount_dispense = ob.value_numeric
 WHERE ob1.concept_id = 163711
@@ -818,8 +825,8 @@ AND ob.voided = 0;
 /*Update for having dispensation_date of the drug*/
 UPDATE isanteplus.patient_prescription pp
 INNER JOIN _tmp_obs ob2 ON pp.drug_id = ob2.value_coded
-INNER JOIN _tmp_obs ob1 ON ob1.obs_id = ob2.obs_group_id
-INNER JOIN _tmp_obs ob3 ON pp.encounter_id = ob3.encounter_id
+INNER JOIN _tmp_obs_grp ob1 ON ob1.obs_id = ob2.obs_group_id
+INNER JOIN _tmp_obs_sib ob3 ON pp.encounter_id = ob3.encounter_id
     AND ob1.obs_id = ob3.obs_group_id
 SET pp.dispensation_date = DATE(ob3.obs_datetime)
 WHERE ob1.concept_id = 163711
@@ -881,9 +888,9 @@ INNER JOIN (
   JOIN (
     SELECT pv.visit_id, o.value_numeric AS 'weight'
     FROM isanteplus.health_qual_patient_visit pv
-    INNER JOIN _tmp_obs o
+    INNER JOIN _tmp_obs_grp o
     ON o.person_id = pv.patient_id
-    INNER JOIN _tmp_encounter e
+    INNER JOIN _tmp_encounter_2 e
     ON pv.visit_id = e.visit_id
     AND e.encounter_id = o.encounter_id
     AND e.encounter_id = pv.encounter_id
@@ -1097,7 +1104,7 @@ INSERT INTO patient_tb_diagnosis
 SELECT DISTINCT ob.person_id,
   ob.encounter_id,ob.location_id, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 WHERE ob1.concept_id IN (@concept_tb_diag_group, @concept_mdr_tb_diag_group)
@@ -1204,7 +1211,7 @@ WHERE enp.voided = 0;
 /*Update tb_diag*/
 UPDATE patient_tb_diagnosis pat
 INNER JOIN _tmp_obs ob ON pat.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.obs_group_id = ob1.obs_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.obs_group_id = ob1.obs_id
 SET pat.tb_diag = 1
 WHERE ob1.concept_id = @concept_tb_diag_group
 AND (ob.concept_id = 1284 AND ob.value_coded = 112141)
@@ -1213,7 +1220,7 @@ AND ob.voided = 0;
 /*Update mdr_tb_diag*/
 UPDATE patient_tb_diagnosis pat
 INNER JOIN _tmp_obs ob ON pat.encounter_id = ob.encounter_id
-INNER JOIN _tmp_obs ob1 ON ob.obs_group_id = ob1.obs_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.obs_group_id = ob1.obs_id
 SET pat.mdr_tb_diag = 1
 WHERE ob1.concept_id = @concept_mdr_tb_diag_group
 AND (ob.concept_id = 1284 AND ob.value_coded = 159345)
@@ -1284,7 +1291,7 @@ UPDATE patient_tb_diagnosis pat
 INNER JOIN _tmp_obs ob ON pat.encounter_id = ob.encounter_id
 INNER JOIN (
   SELECT o.person_id, o.encounter_id, COUNT(o.encounter_id) AS nb
-  FROM _tmp_obs o
+  FROM _tmp_obs_grp o
   WHERE o.concept_id = 6042
   AND o.value_coded IN (42,159355,118890)
   GROUP BY 1
@@ -1387,7 +1394,7 @@ INNER JOIN (
   MAX(CASE WHEN ob.concept_id = 165999 THEN (CASE WHEN ob1.value_coded = 703 THEN 1 WHEN ob1.value_coded = 664 THEN 2 END) END) AS tb_test_result_mon_5,
   MAX(CASE WHEN ob.concept_id = 165804 THEN (CASE WHEN ob1.value_coded = 703 THEN 1 WHEN ob1.value_coded = 664 THEN 2 END) END) AS tb_test_result_end
   FROM _tmp_obs ob1
-  INNER JOIN _tmp_obs ob
+  INNER JOIN _tmp_obs_grp ob
   ON ob.obs_id = ob1.obs_group_id
   WHERE ob.concept_id IN (166136, 166134, 165978, 165999, 165804)
   AND ob1.concept_id = 307
@@ -1776,7 +1783,7 @@ START TRANSACTION;
 INSERT INTO patient_pregnancy (patient_id,encounter_id,start_date,last_updated_date, voided)
 SELECT DISTINCT ob.person_id,ob.encounter_id,DATE(ob.obs_datetime) AS start_date, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.obs_group_id = ob1.obs_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.obs_group_id = ob1.obs_id
 WHERE ob1.concept_id IN (@concept_preg_grp_1, @concept_preg_grp_2, @concept_preg_grp_3,
   @concept_preg_grp_4, @concept_preg_grp_5, @concept_preg_grp_6, @concept_preg_grp_7,
   @concept_preg_grp_8, @concept_preg_grp_9, @concept_preg_grp_10, @concept_preg_grp_11
@@ -1995,7 +2002,7 @@ INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert)
 SELECT DISTINCT B.patient_id,1,B.encounter_id, B.visit_date
 FROM isanteplus.patient p
 INNER JOIN (
-  SELECT pdis.patient_id, pdis.encounter_id AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
+  SELECT pdis.patient_id, MAX(pdis.encounter_id) AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
   FROM isanteplus.patient_dispensing pdis
   WHERE pdis.arv_drug = 1065
   GROUP BY 1
@@ -2023,7 +2030,7 @@ INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert)
 SELECT DISTINCT B.patient_id,2,B.encounter_id, B.visit_date
 FROM isanteplus.patient p
 INNER JOIN (
-  SELECT pdis.patient_id, pdis.encounter_id AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
+  SELECT pdis.patient_id, MAX(pdis.encounter_id) AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
   FROM isanteplus.patient_dispensing pdis
   WHERE pdis.arv_drug = 1065
   GROUP BY 1
@@ -2177,7 +2184,7 @@ INSERT INTO alert(patient_id,id_alert,encounter_id,date_alert)
 SELECT DISTINCT B.patient_id,8,B.encounter_id, B.visit_date
 FROM isanteplus.patient p
 INNER JOIN (
-  SELECT pdis.patient_id, pdis.encounter_id AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
+  SELECT pdis.patient_id, MAX(pdis.encounter_id) AS encounter_id, MIN(DATE(pdis.visit_date)) AS visit_date
   FROM isanteplus.patient_dispensing pdis
   WHERE pdis.arv_drug = 1065
   GROUP BY 1
@@ -2266,7 +2273,7 @@ INSERT INTO virological_tests
 SELECT DISTINCT ob.person_id,ob.encounter_id,
   ob.location_id,ob1.concept_id,ob.obs_group_id,ob.concept_id, ob.value_coded, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 WHERE ob1.concept_id IN (@concept_viro_grp_1, @concept_viro_grp_2, @concept_viro_grp_3)
@@ -2500,7 +2507,7 @@ END;
 INSERT INTO temp_vaccination (person_id, value_coded, dose, obs_group_id, obs_datetime, encounter_id)
 SELECT ob.person_id, ob.value_coded, ob2.value_numeric, ob.obs_group_id, ob.obs_datetime, ob.encounter_id
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob2 ON ob2.obs_group_id = ob.obs_group_id
+INNER JOIN _tmp_obs_grp ob2 ON ob2.obs_group_id = ob.obs_group_id
 WHERE ob2.concept_id = 1418
 AND ob.concept_id = 984
 AND ob.voided = 0;
@@ -2612,10 +2619,10 @@ INSERT into serological_tests
   last_updated_date,
   voided
 )
-select distinct ob.person_id,ob.encounter_id,
+SELECT DISTINCT ob.person_id,ob.encounter_id,
   ob.location_id,ob1.concept_id,ob.obs_group_id,ob.concept_id, ob.value_coded, now(), ob.voided
 FROM _tmp_obs ob
-INNER JOIN _tmp_obs ob1 ON ob.person_id = ob1.person_id
+INNER JOIN _tmp_obs_grp ob1 ON ob.person_id = ob1.person_id
     AND ob.encounter_id = ob1.encounter_id
     AND ob.obs_group_id = ob1.obs_id
 WHERE ob1.concept_id IN (@concept_sero_grp_1,
@@ -2628,7 +2635,7 @@ WHERE ob1.concept_id IN (@concept_sero_grp_1,
 /*AND ob1.concept_id=1361*/
 AND ob.concept_id = 162087
 AND ob.value_coded IN(163722,1042)
-on duplicate key update
+ON DUPLICATE KEY UPDATE
   encounter_id = ob.encounter_id,
   last_updated_date = now(),
   voided = ob.voided;
@@ -2703,25 +2710,26 @@ AND vt.test_result IN (664,703,1138);
 INSERT INTO isanteplus.patient_malaria (patient_id, encounter_type_id, encounter_id, location_id, last_updated_date, visit_id, visit_date, voided)
 SELECT DISTINCT
   enc.patient_id,
-  enc.encounter_type,
+  enct.encounter_type_id,
   enc.encounter_id,
   enc.location_id,
   NOW(),
   enc.visit_id,
   CAST(enc.encounter_datetime AS DATE),
   enc.voided
-FROM _tmp_encounter enc
-WHERE enc.encounter_type IN (
-  @et_adult_initial, -- Soins de santé primaire--premiére consultation (Adult intital consultation)
-  @et_adult_followup, -- Soins de santé primaire--consultation (Adult followp consultation)
-  @et_ped_initial, -- Soins de santé primaire--premiére con. p (Paeditric initial consultation)
-  @et_ped_followup, -- Soins de santé primaire--con. pédiatrique (Paediatric followup consultation)
-  @et_obgyn_followup, -- Ob/gyn Suivi
-  @et_obgyn_initial, -- Saisie Première ob/gyn
-  @et_first_hiv_visit, -- Saisie Première
-  @et_followup_hiv_visit, -- Suivi Visite
-  @et_ped_first_hiv_visit, -- Saisie Première pédiatrique
-  @et_lab -- Analyses de Lab.
+FROM _tmp_encounter enc, openmrs.encounter_type enct
+WHERE enc.encounter_type = enct.encounter_type_id
+AND enct.uuid IN (
+  '12f4d7c3-e047-4455-a607-47a40fe32460', -- Soins de santé primaire--premiére consultation (Adult intital consultation)
+  'a5600919-4dde-4eb8-a45b-05c204af8284', -- Soins de santé primaire--consultation (Adult followp consultation)
+  '709610ff-5e39-4a47-9c27-a60e740b0944', -- Soins de santé primaire--premiére con. p (Paeditric initial consultation)
+  'fdb5b14f-555f-4282-b4c1-9286addf0aae', -- Soins de santé primaire--con. pédiatrique (Paediatric followup consultation)
+  '49592bec-dd22-4b6c-a97f-4dd2af6f2171', -- Ob/gyn Suivi
+  '5c312603-25c1-4dbe-be18-1a167eb85f97', -- Saisie Première ob/gyn
+  '17536ba6-dd7c-4f58-8014-08c7cb798ac7', -- Saisie Première
+  '204ad066-c5c2-4229-9a62-644bc5617ca2', -- Suivi Visite
+  '349ae0b4-65c1-4122-aa06-480f186c8350', -- Saisie Première pédiatrique
+  'f037e97b-471e-4898-a07c-b8e169e0ddc4' -- Analyses de Lab.
 )
 ON DUPLICATE KEY UPDATE
   encounter_id = enc.encounter_id,
@@ -2856,7 +2864,7 @@ INSERT INTO isanteplus.patient_on_art(patient_id)
 SELECT DISTINCT pa.patient_id
 FROM isanteplus.patient_on_arv pa
 ON DUPLICATE KEY UPDATE
-  patient_id = pa.patient_id ;
+  patient_id = pa.patient_id;
 
 
 /*Insertion lab VHI+ for patient_on_art table*/
@@ -2866,8 +2874,9 @@ FROM _tmp_obs ob
 WHERE ob.concept_id = 1271
 AND ob.value_coded IN (1040, 1042)
 ON DUPLICATE KEY UPDATE
+  patient_id = ob.person_id;
 
-/*uPDATE lab VHI+ for patient_on_art table*/
+/*Update lab VHI+ for patient_on_art table*/
 UPDATE isanteplus.patient_on_art pa
 INNER JOIN _tmp_obs ob ON pa.patient_id = ob.person_id
 SET pa.tested_hiv_postive = 1, pa.date_tested_hiv_postive = DATE(ob.obs_datetime)
@@ -2882,7 +2891,7 @@ FROM _tmp_obs ob
 WHERE ob.concept_id = 160082
 AND ob.voided = 0
 ON DUPLICATE KEY UPDATE
-
+  patient_id = ob.person_id;
 
 
 UPDATE isanteplus.patient_on_art par
@@ -2926,7 +2935,7 @@ INNER JOIN (
   )
   AND e.voided = 0
   AND e.encounter_datetime NOT IN (SELECT MAX(e.encounter_datetime)
-    FROM _tmp_encounter e
+    FROM _tmp_encounter_2 e
     WHERE e.encounter_type IN (@et_first_hiv_visit, @et_ped_first_hiv_visit)
     AND e.voided = 0
   )
@@ -3158,7 +3167,7 @@ SET pat.migrated = (CASE WHEN o.value_coded = 160415 THEN 1 ELSE 0 END )
 WHERE o.concept_id = 161555;
 
 /* Insertion for key_populations table */
-INSERT into key_populations
+INSERT INTO key_populations
 (
   patient_id,
   encounter_id,
@@ -3168,17 +3177,17 @@ INSERT into key_populations
   voided,
   last_updated_date
 )
-select distinct o.person_id,o.encounter_id,
+SELECT DISTINCT o.person_id,o.encounter_id,
   o.location_id,o.value_coded, o.value_datetime, o.voided, now()
-from _tmp_obs o
-where o.concept_id = @concept_key_population
+FROM _tmp_obs o
+WHERE o.concept_id = @concept_key_population
 AND o.value_coded IS NOT NULL
-on duplicate key update
+ON DUPLICATE KEY UPDATE
   voided = o.voided,
   last_updated_date = now();
 
 /*Insertion for Planning Familial */
-INSERT into family_planning
+INSERT INTO family_planning
 (
   patient_id,
   encounter_id,
@@ -3188,13 +3197,13 @@ INSERT into family_planning
   voided,
   last_updated_date
 )
-select distinct o.person_id,o.encounter_id,
+SELECT DISTINCT o.person_id,o.encounter_id,
   o.location_id,o.value_coded, o.obs_datetime, o.voided, now()
-from _tmp_obs o
-where o.concept_id = 374
+FROM _tmp_obs o
+WHERE o.concept_id = 374
 AND o.value_coded IN (780,190, 1359, 5279, 163759)
 AND o.voided = 0
-on duplicate key update
+ON DUPLICATE KEY UPDATE
   voided = o.voided,
   last_updated_date = now();
 
@@ -3262,8 +3271,12 @@ COMMIT;
 -- NETTOYAGE : Supprimer les tables temporaires
 -- =============================================================================
 DROP TEMPORARY TABLE IF EXISTS _tmp_obs;
+DROP TEMPORARY TABLE IF EXISTS _tmp_obs_grp;
+DROP TEMPORARY TABLE IF EXISTS _tmp_obs_sib;
 DROP TEMPORARY TABLE IF EXISTS _tmp_encounter;
+DROP TEMPORARY TABLE IF EXISTS _tmp_encounter_2;
 DROP TEMPORARY TABLE IF EXISTS _tmp_visit;
+DROP TEMPORARY TABLE IF EXISTS _tmp_visit_2;
 DROP TEMPORARY TABLE IF EXISTS _tmp_encounter_provider;
 DROP TEMPORARY TABLE IF EXISTS _tmp_person;
 DROP TEMPORARY TABLE IF EXISTS _tmp_patient;

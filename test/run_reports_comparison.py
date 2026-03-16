@@ -2,7 +2,7 @@
 """
 Automated runner for the reports ETL comparison test.
 
-Loads DDLs, test data, wraps each flat SQL file in a stored procedure,
+Loads DDLs, test data, executes each flat SQL file directly,
 then runs the comparison script that diffs the results.
 """
 
@@ -125,34 +125,63 @@ def load_sql_dir(args, directory, step_num, total_steps, label):
         print('done', file=sys.stderr)
 
 
-def wrap_in_procedure(sql_path, proc_name):
-    """Read a flat SQL file and wrap its body in a CREATE PROCEDURE statement.
+def split_comparison_sql(comparison_path):
+    """Split the comparison SQL into phases around the CALL statements.
 
-    Strips the leading USE isanteplus; line (not allowed inside a procedure body)
-    and re-emits it before the DELIMITER block.
+    Returns (phase_backup, phase_capture_and_restore, phase_compare), where:
+      - phase_backup: everything before CALL _test_reports_current()
+      - phase_capture_and_restore: everything between the two CALLs
+        (capture current results, restore state)
+      - phase_compare: everything after CALL _test_reports_new()
+        (capture new results, run comparisons)
+
+    The SET @_tr_*_start/end timing variables are kept with their
+    surrounding phases so they stay in the same session as the
+    comparison queries that reference them.
     """
-    sql_content = sql_path.read_text(encoding='utf-8')
-    sql_content = re.sub(r'(?i)^\s*USE\s+isanteplus\s*;\s*\n?', '', sql_content, count=1)
+    lines = comparison_path.read_text(encoding='utf-8').splitlines(keepends=True)
 
-    return (
-        f'USE isanteplus;\n'
-        f'DELIMITER $$\n'
-        f'DROP PROCEDURE IF EXISTS {proc_name}$$\n'
-        f'CREATE PROCEDURE {proc_name}()\n'
-        f'BEGIN\n'
-        f'{sql_content}\n'
-        f'END$$\n'
-        f'DELIMITER ;\n'
-    )
+    first_call = None
+    second_call = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('CALL _test_reports_current'):
+            first_call = i
+        elif stripped.startswith('CALL _test_reports_new'):
+            second_call = i
 
+    if first_call is None or second_call is None:
+        print('Error: could not find CALL statements in comparison SQL',
+              file=sys.stderr)
+        sys.exit(1)
 
-def create_procedure(args, sql_path, proc_name, step_num, total_steps):
-    """Wrap a flat SQL file in a stored procedure and load it."""
-    print(f'[{step_num}/{total_steps}] Creating stored procedure: {proc_name} ... ',
-          end='', file=sys.stderr, flush=True)
-    wrapped_sql = wrap_in_procedure(sql_path, proc_name)
-    run_mysql(args, input_text=wrapped_sql)
-    print('done', file=sys.stderr)
+    # Phase 1: everything up to (but not including) the SET/CALL/SET block
+    # Find the SET @_tr_current_start line before the first CALL
+    phase1_end = first_call
+    while phase1_end > 0 and 'SET @_tr_current_start' not in lines[phase1_end - 1]:
+        phase1_end -= 1
+    phase_backup = ''.join(lines[:phase1_end])
+
+    # Phase 2: from after SET @_tr_current_end to before SET @_tr_new_start
+    # Find SET @_tr_current_end after first CALL
+    phase2_start = first_call + 1
+    while phase2_start < len(lines) and 'SET @_tr_current_end' not in lines[phase2_start]:
+        phase2_start += 1
+    phase2_start += 1  # skip the SET line itself
+
+    phase2_end = second_call
+    while phase2_end > 0 and 'SET @_tr_new_start' not in lines[phase2_end - 1]:
+        phase2_end -= 1
+    phase_capture_and_restore = 'USE isanteplus;\n' + ''.join(lines[phase2_start:phase2_end])
+
+    # Phase 3: everything after SET @_tr_new_end
+    phase3_start = second_call + 1
+    while phase3_start < len(lines) and 'SET @_tr_new_end' not in lines[phase3_start]:
+        phase3_start += 1
+    phase3_start += 1  # skip the SET line itself
+    phase_compare = 'USE isanteplus;\n' + ''.join(lines[phase3_start:])
+
+    return phase_backup, phase_capture_and_restore, phase_compare
 
 
 def preflight(args):
@@ -268,7 +297,7 @@ def main():
 
     preflight(args)
 
-    total_steps = 5
+    total_steps = 7
 
     # Step 1: Load DDLs
     load_sql_dir(args, args.ddl_dir, 1, total_steps, 'DDL')
@@ -276,16 +305,38 @@ def main():
     # Step 2: Load test data
     load_sql_dir(args, args.test_data_dir, 2, total_steps, 'test data')
 
-    # Step 3: Wrap current SQL in stored procedure
-    create_procedure(args, args.current_sql, '_test_reports_current', 3, total_steps)
+    # Split comparison SQL into phases around the CALL statements
+    phase_backup, phase_capture_and_restore, phase_compare = \
+        split_comparison_sql(args.comparison_sql)
 
-    # Step 4: Wrap new SQL in stored procedure
-    create_procedure(args, args.new_sql, '_test_reports_new', 4, total_steps)
-
-    # Step 5: Run comparison
-    print(f'[5/{total_steps}] Running comparison script ... ',
+    # Step 3: Create backup tables
+    print(f'[3/{total_steps}] Creating backup tables ... ',
           end='', file=sys.stderr, flush=True)
-    stdout, _ = run_mysql(args, input_file=args.comparison_sql, capture_stdout=True)
+    run_mysql(args, input_text=phase_backup)
+    print('done', file=sys.stderr)
+
+    # Step 4: Run current (production) SQL directly
+    print(f'[4/{total_steps}] Running current SQL: {args.current_sql.name} ... ',
+          end='', file=sys.stderr, flush=True)
+    run_mysql(args, input_file=args.current_sql)
+    print('done', file=sys.stderr)
+
+    # Step 5: Capture current results and restore state
+    print(f'[5/{total_steps}] Capturing current results and restoring state ... ',
+          end='', file=sys.stderr, flush=True)
+    run_mysql(args, input_text=phase_capture_and_restore)
+    print('done', file=sys.stderr)
+
+    # Step 6: Run new (modified) SQL directly
+    print(f'[6/{total_steps}] Running new SQL: {args.new_sql.name} ... ',
+          end='', file=sys.stderr, flush=True)
+    run_mysql(args, input_file=args.new_sql)
+    print('done', file=sys.stderr)
+
+    # Step 7: Capture new results and run comparison
+    print(f'[7/{total_steps}] Running comparison ... ',
+          end='', file=sys.stderr, flush=True)
+    stdout, _ = run_mysql(args, input_text=phase_compare, capture_stdout=True)
     print('done', file=sys.stderr)
 
     print('\n=== Comparison Results ===', file=sys.stderr)
